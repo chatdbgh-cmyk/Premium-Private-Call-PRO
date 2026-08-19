@@ -136,8 +136,18 @@ export const HireModal: React.FC<HireModalProps> = ({
                 />
               </div>
               <div className="flex-1 min-w-0">
-                <h4 className="font-bold text-slate-100 text-sm truncate">{developer.name}</h4>
-                <p className="text-xs text-slate-300 line-clamp-1">{developer.service}</p>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <h4 className="font-bold text-slate-100 text-sm truncate">{developer.name}</h4>
+                  <span className="text-[9px] font-mono bg-cyan-950/90 text-cyan-300 font-bold px-1.5 py-0.2 rounded border border-cyan-800/60">
+                    🆔 আইডি: #{developer.id}
+                  </span>
+                  {developer.username && (
+                    <span className="text-[9px] font-mono text-slate-400">
+                      {developer.username}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-300 line-clamp-1 mt-0.5">{developer.service}</p>
                 <div className="flex items-center gap-3 mt-1 text-[11px] text-slate-300">
                   <span className="flex items-center gap-1 text-amber-400 font-medium">
                     <Star className="w-3 h-3 fill-amber-400 text-amber-400" /> {developer.rating || '5.0'}

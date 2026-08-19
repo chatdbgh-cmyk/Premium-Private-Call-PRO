@@ -45,6 +45,9 @@ export interface Developer {
   phone?: string; // sensitive - only visible to admin
   telegram?: string;
   externalChatUrl?: string;
+  voiceIntroUrl?: string;
+  voiceIntroText?: string;
+  voiceIntroDuration?: string;
   isTimeSaleActive?: boolean;
   maxAvailableHours?: number;
   bookedHours?: number;
@@ -134,6 +137,8 @@ export interface PaymentSettings {
 export interface MarketingBanner {
   id: string;
   image: string;
+  mediaType?: 'image' | 'video';
+  videoUrl?: string;
   title?: string;
   subtitle?: string;
   buttonText?: string;
@@ -156,9 +161,11 @@ export interface SiteConfig {
   // Homepage Dynamic Support & Notice Box
   homeSupportNotice?: string;
   showHomeSupportNotice?: boolean;
-  // Welcome / Entrance Popup Promo Banners (Supports Unlimited Multiple Banners)
+  // Welcome / Entrance Popup Promo Banners (Supports Unlimited Multiple Banners & Videos)
   popupBanners?: MarketingBanner[];
   popupBannerImage?: string;
+  popupBannerVideo?: string;
+  popupBannerMediaType?: 'image' | 'video';
   showPopupBanner?: boolean;
   popupBannerTitle?: string;
   popupBannerSubtitle?: string;

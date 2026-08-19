@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Sparkles, ExternalLink, ChevronRight, ChevronLeft, BellRing } from 'lucide-react';
+import { X, Sparkles, ExternalLink, ChevronRight, ChevronLeft, BellRing, Volume2, VolumeX, Play, Pause } from 'lucide-react';
 import { SiteConfig, MarketingBanner } from '../types';
 import { sounds } from '../utils/sound';
 
@@ -16,6 +16,9 @@ export const EntrancePopupBanner: React.FC<EntrancePopupBannerProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
+  const [isVideoMuted, setIsVideoMuted] = useState(true);
+  const [isVideoPlaying, setIsVideoPlaying] = useState(true);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   // Compute active banners list
   const activeBanners: MarketingBanner[] = React.useMemo(() => {
@@ -71,13 +74,18 @@ export const EntrancePopupBanner: React.FC<EntrancePopupBannerProps> = ({
 
     const interval = setInterval(() => {
       setCurrentIndex((prev) => (prev + 1) % activeBanners.length);
-    }, 4500);
+    }, 5000);
 
     return () => clearInterval(interval);
   }, [isOpen, isPaused, activeBanners.length]);
 
   const handleClose = () => {
     sounds.playClick();
+    if (videoRef.current) {
+      try {
+        videoRef.current.pause();
+      } catch {}
+    }
     setIsOpen(false);
   };
 
@@ -106,9 +114,35 @@ export const EntrancePopupBanner: React.FC<EntrancePopupBannerProps> = ({
     }
   };
 
+  const toggleVideoPlayback = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!videoRef.current) return;
+    if (videoRef.current.paused) {
+      videoRef.current.play();
+      setIsVideoPlaying(true);
+    } else {
+      videoRef.current.pause();
+      setIsVideoPlaying(false);
+    }
+  };
+
+  const toggleMute = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!videoRef.current) return;
+    videoRef.current.muted = !videoRef.current.muted;
+    setIsVideoMuted(videoRef.current.muted);
+  };
+
   if (!isEnabled || !hasBanners || !currentBanner) {
     return null;
   }
+
+  const isVideoMedia =
+    currentBanner.mediaType === 'video' ||
+    Boolean(currentBanner.videoUrl) ||
+    currentBanner.image?.startsWith('data:video') ||
+    currentBanner.image?.endsWith('.mp4') ||
+    currentBanner.image?.endsWith('.webm');
 
   return (
     <AnimatePresence>
@@ -143,24 +177,76 @@ export const EntrancePopupBanner: React.FC<EntrancePopupBannerProps> = ({
               <X className="w-4 h-4 sm:w-5 sm:h-5 group-hover:rotate-90 transition-transform duration-200" />
             </button>
 
-            {/* Banner Image with responsive aspect ratio & Carousel navigation */}
+            {/* Banner Media (Image / Video) with responsive aspect ratio & Carousel navigation */}
             <div className="relative w-full h-48 xs:h-56 sm:h-64 bg-slate-950 overflow-hidden flex items-center justify-center shrink-0">
               <AnimatePresence mode="wait">
-                <motion.img
-                  key={currentBanner.id || currentIndex}
-                  src={currentBanner.image}
-                  alt={currentBanner.title || 'অফিসিয়াল ব্যানার'}
-                  referrerPolicy="no-referrer"
-                  initial={{ opacity: 0, scale: 1.05 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.96 }}
-                  transition={{ duration: 0.35 }}
-                  className="w-full h-full object-cover object-center"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src =
-                      'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1000&q=80';
-                  }}
-                />
+                {isVideoMedia ? (
+                  <div className="relative w-full h-full group/video">
+                    <motion.video
+                      ref={videoRef}
+                      key={currentBanner.id || currentIndex}
+                      src={currentBanner.videoUrl || currentBanner.image}
+                      autoPlay
+                      muted={isVideoMuted}
+                      loop
+                      playsInline
+                      onClick={toggleVideoPlayback}
+                      initial={{ opacity: 0, scale: 1.05 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.96 }}
+                      transition={{ duration: 0.35 }}
+                      className="w-full h-full object-cover object-center bg-black cursor-pointer"
+                    />
+
+                    {/* Video Center Play/Pause Indicator if paused */}
+                    {!isVideoPlaying && (
+                      <div
+                        onClick={toggleVideoPlayback}
+                        className="absolute inset-0 flex items-center justify-center bg-black/40 cursor-pointer"
+                      >
+                        <div className="p-3 rounded-full bg-amber-500 text-slate-950 shadow-xl animate-pulse">
+                          <Play className="w-6 h-6 fill-slate-950 ml-0.5" />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Sound Mute/Unmute Toggle & Play/Pause Button bottom right */}
+                    <div className="absolute bottom-3 right-3 flex items-center gap-1.5 z-20">
+                      <button
+                        type="button"
+                        onClick={toggleVideoPlayback}
+                        className="p-1.5 rounded-full bg-black/70 hover:bg-black/90 text-white border border-white/20 transition cursor-pointer"
+                        title={isVideoPlaying ? 'ভিডিও থামান' : 'ভিডিও প্লে করুন'}
+                      >
+                        {isVideoPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 fill-white" />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={toggleMute}
+                        className="p-1.5 rounded-full bg-black/70 hover:bg-black/90 text-white border border-white/20 transition cursor-pointer"
+                        title={isVideoMuted ? 'সাউন্ড আনমিউট করুন' : 'সাউন্ড মিউট করুন'}
+                      >
+                        {isVideoMuted ? <VolumeX className="w-3.5 h-3.5 text-amber-400" /> : <Volume2 className="w-3.5 h-3.5 text-lime-400" />}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <motion.img
+                    key={currentBanner.id || currentIndex}
+                    src={currentBanner.image}
+                    alt={currentBanner.title || 'অফিসিয়াল ব্যানার'}
+                    referrerPolicy="no-referrer"
+                    initial={{ opacity: 0, scale: 1.05 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.96 }}
+                    transition={{ duration: 0.35 }}
+                    className="w-full h-full object-cover object-center"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src =
+                        'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1000&q=80';
+                    }}
+                  />
+                )}
               </AnimatePresence>
 
               <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/30 to-transparent pointer-events-none" />

@@ -233,6 +233,8 @@ export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
 
   // Multi-Banner Manager States
   const [newBannerImage, setNewBannerImage] = useState('');
+  const [newBannerMediaType, setNewBannerMediaType] = useState<'image' | 'video'>('image');
+  const [newBannerVideoUrl, setNewBannerVideoUrl] = useState('');
   const [newBannerTitle, setNewBannerTitle] = useState('');
   const [newBannerSubtitle, setNewBannerSubtitle] = useState('');
   const [newBannerButtonText, setNewBannerButtonText] = useState('এখনই দেখুন');
@@ -242,10 +244,11 @@ export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
   const handleBannerFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      alert('ছবির সাইজ ৫MB এর কম হতে হবে!');
+    if (file.size > 25 * 1024 * 1024) {
+      alert('ফাইলের সাইজ ২৫MB এর কম হতে হবে!');
       return;
     }
+    const isVideo = file.type.startsWith('video/');
     const reader = new FileReader();
     reader.onload = (uploadEvent) => {
       const result = uploadEvent.target?.result as string;
@@ -253,6 +256,8 @@ export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
         setEditableConfig((prev) => ({
           ...prev,
           popupBannerImage: result,
+          popupBannerMediaType: isVideo ? 'video' : 'image',
+          popupBannerVideo: isVideo ? result : undefined,
           showPopupBanner: true,
         }));
         sounds.playSuccess();
@@ -264,15 +269,22 @@ export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
   const handleAddNewBannerFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      alert('ছবির সাইজ ৫MB এর কম হতে হবে!');
+    if (file.size > 25 * 1024 * 1024) {
+      alert('ফাইলের সাইজ ২৫MB এর কম হতে হবে!');
       return;
     }
+    const isVideo = file.type.startsWith('video/');
     const reader = new FileReader();
     reader.onload = (uploadEvent) => {
       const result = uploadEvent.target?.result as string;
       if (result) {
         setNewBannerImage(result);
+        if (isVideo) {
+          setNewBannerMediaType('video');
+          setNewBannerVideoUrl(result);
+        } else {
+          setNewBannerMediaType('image');
+        }
         sounds.playSuccess();
       }
     };
@@ -280,13 +292,22 @@ export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
   };
 
   const handleAddBannerToList = () => {
-    if (!newBannerImage.trim()) {
-      alert('অনুগ্রহ করে ব্যানারের একটি ছবি আপলোড করুন বা লিংক দিন!');
+    const mediaSource = newBannerImage.trim() || newBannerVideoUrl.trim();
+    if (!mediaSource) {
+      alert('অনুগ্রহ করে ব্যানারের একটি ছবি বা ভিডিও আপলোড করুন বা অনলাইন লিংক দিন!');
       return;
     }
+    const isVideo =
+      newBannerMediaType === 'video' ||
+      mediaSource.startsWith('data:video') ||
+      mediaSource.endsWith('.mp4') ||
+      mediaSource.endsWith('.webm');
+
     const newBanner: MarketingBanner = {
       id: `banner-${Date.now()}`,
-      image: newBannerImage.trim(),
+      image: mediaSource,
+      mediaType: isVideo ? 'video' : 'image',
+      videoUrl: isVideo ? mediaSource : undefined,
       title: newBannerTitle.trim() || '🎉 বিশেষ অফার ও ঘোষণা!',
       subtitle: newBannerSubtitle.trim() || '',
       buttonText: newBannerButtonText.trim() || 'এখনই দেখুন',
@@ -304,6 +325,8 @@ export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
     setEditableConfig(updatedConfig);
     onUpdateSiteConfig(updatedConfig);
     setNewBannerImage('');
+    setNewBannerVideoUrl('');
+    setNewBannerMediaType('image');
     setNewBannerTitle('');
     setNewBannerSubtitle('');
     setNewBannerButtonText('এখনই দেখুন');
@@ -311,7 +334,7 @@ export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
     setIsAddingNewBanner(false);
     sounds.playSuccess();
     triggerConfetti();
-    alert('✅ নতুন ব্যানার সফলভাবে তালিকায় যোগ করা হয়েছে!');
+    alert('✅ নতুন ব্যানার (ছবি/ভিডিও) সফলভাবে তালিকায় যোগ করা হয়েছে!');
   };
 
   const handleDeleteBannerItem = (id: string) => {
@@ -2163,27 +2186,57 @@ export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
                       <div className="pt-3 border-t border-slate-800 grid grid-cols-1 md:grid-cols-2 gap-4 animate-fadeIn">
                         {/* Form Inputs */}
                         <div className="space-y-3">
-                          {/* Image Upload / URL */}
+                          {/* Media Type & Upload / URL */}
                           <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
-                              <Upload className="w-3.5 h-3.5 text-amber-400" />
-                              <span>১. ব্যানারের ছবি (আপলোড বা URL):</span>
-                            </label>
+                            <div className="flex items-center justify-between">
+                              <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                                <Upload className="w-3.5 h-3.5 text-amber-400" />
+                                <span>১. ব্যানার মিডিয়া (ছবি বা ভিডিও):</span>
+                              </label>
+                              <div className="flex items-center gap-1 bg-slate-900 p-0.5 rounded-lg border border-slate-700">
+                                <button
+                                  type="button"
+                                  onClick={() => setNewBannerMediaType('image')}
+                                  className={`px-2 py-0.5 text-[10px] font-bold rounded ${
+                                    newBannerMediaType === 'image'
+                                      ? 'bg-amber-500 text-slate-950'
+                                      : 'text-slate-400 hover:text-white'
+                                  }`}
+                                >
+                                  🖼️ ছবি
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setNewBannerMediaType('video')}
+                                  className={`px-2 py-0.5 text-[10px] font-bold rounded ${
+                                    newBannerMediaType === 'video'
+                                      ? 'bg-amber-500 text-slate-950'
+                                      : 'text-slate-400 hover:text-white'
+                                  }`}
+                                >
+                                  🎬 ভিডিও
+                                </button>
+                              </div>
+                            </div>
+
                             <div className="flex gap-2">
                               <label className="flex-1 py-2 px-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:text-amber-200 text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition">
                                 <Upload className="w-4 h-4 text-amber-400" />
-                                <span>ছবি আপলোড করুন</span>
+                                <span>{newBannerMediaType === 'video' ? 'ভিডিও ফাইল আপলোড (MP4/WebM)' : 'ছবি আপলোড করুন'}</span>
                                 <input
                                   type="file"
-                                  accept="image/*"
+                                  accept={newBannerMediaType === 'video' ? 'video/*' : 'image/*'}
                                   onChange={handleAddNewBannerFileUpload}
                                   className="hidden"
                                 />
                               </label>
-                              {newBannerImage && (
+                              {(newBannerImage || newBannerVideoUrl) && (
                                 <button
                                   type="button"
-                                  onClick={() => setNewBannerImage('')}
+                                  onClick={() => {
+                                    setNewBannerImage('');
+                                    setNewBannerVideoUrl('');
+                                  }}
                                   className="px-3 py-2 rounded-xl bg-rose-950/60 hover:bg-rose-900 border border-rose-800 text-rose-300 text-xs font-bold transition"
                                 >
                                   মুছুন
@@ -2192,9 +2245,18 @@ export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
                             </div>
                             <input
                               type="text"
-                              value={newBannerImage}
-                              onChange={(e) => setNewBannerImage(e.target.value)}
-                              placeholder="বা ছবির অনলাইন লিংক দিন (https://...)"
+                              value={newBannerImage || newBannerVideoUrl}
+                              onChange={(e) => {
+                                setNewBannerImage(e.target.value);
+                                if (newBannerMediaType === 'video') {
+                                  setNewBannerVideoUrl(e.target.value);
+                                }
+                              }}
+                              placeholder={
+                                newBannerMediaType === 'video'
+                                  ? 'বা ভিডিও অনলাইন লিংক দিন (https://.../video.mp4)'
+                                  : 'বা ছবির অনলাইন লিংক দিন (https://...)'
+                              }
                               className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-cyan-300 focus:outline-none focus:border-amber-500"
                             />
                           </div>
@@ -2317,14 +2379,23 @@ export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
                           <span className="text-[11px] font-bold text-amber-300">নতুন ব্যানারের প্রিভিউ</span>
                           <div className="mt-2 rounded-xl overflow-hidden border border-amber-500/40 bg-slate-950">
                             <div className="h-28 bg-slate-900 relative overflow-hidden flex items-center justify-center">
-                              {newBannerImage ? (
+                              {newBannerMediaType === 'video' || (newBannerImage && (newBannerImage.startsWith('data:video') || newBannerImage.endsWith('.mp4') || newBannerImage.endsWith('.webm'))) ? (
+                                <video
+                                  src={newBannerVideoUrl || newBannerImage}
+                                  autoPlay
+                                  muted
+                                  loop
+                                  playsInline
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : newBannerImage ? (
                                 <img
                                   src={newBannerImage}
                                   alt="Preview"
                                   className="w-full h-full object-cover"
                                 />
                               ) : (
-                                <div className="text-center p-3 text-slate-600 text-xs">ছবি যোগ করুন</div>
+                                <div className="text-center p-3 text-slate-600 text-xs">মিডিয়া (ছবি/ভিডিও) যোগ করুন</div>
                               )}
                             </div>
                             <div className="p-3 space-y-1 bg-slate-900">
@@ -2377,15 +2448,26 @@ export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
                                 : 'border-slate-800 opacity-60'
                             }`}
                           >
-                            {/* Banner Image */}
+                            {/* Banner Image / Video */}
                             <div className="relative h-28 bg-slate-900 overflow-hidden">
-                              <img
-                                src={banner.image}
-                                alt={banner.title}
-                                className="w-full h-full object-cover"
-                              />
+                              {banner.mediaType === 'video' || (banner.image && (banner.image.startsWith('data:video') || banner.image.endsWith('.mp4') || banner.image.endsWith('.webm'))) ? (
+                                <video
+                                  src={banner.videoUrl || banner.image}
+                                  autoPlay
+                                  muted
+                                  loop
+                                  playsInline
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <img
+                                  src={banner.image}
+                                  alt={banner.title}
+                                  className="w-full h-full object-cover"
+                                />
+                              )}
                               <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/70 backdrop-blur-sm text-[10px] font-bold text-amber-300 border border-amber-500/30">
-                                #{index + 1}
+                                #{index + 1} {banner.mediaType === 'video' ? '🎬' : '🖼️'}
                               </div>
                               <div className="absolute top-2 right-2 flex items-center gap-1">
                                 <button
@@ -2787,6 +2869,129 @@ export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
                   >
                     টেক্সট নোটিশ সেভ করুন
                   </button>
+                </div>
+
+                {/* D. FULL DATABASE BACKUP & RESTORE MODULE */}
+                <div className="bg-slate-900 border border-emerald-500/30 rounded-2xl p-4 shadow-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                      <span>💾 সম্পূর্ণ ডাটাবেস ব্যাকআপ ও রিস্টোর (JSON Export/Import)</span>
+                    </h3>
+                    <span className="text-[10px] text-emerald-400 font-mono bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-500/30 font-bold">
+                      ১০০% সুরক্ষিত ডাটা
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-300">
+                    হোস্টিং বা সার্ভার স্থানান্তরের পূর্বে আপনার সম্পূর্ণ ওয়েবসাইটের ডাটা (কাস্টমার একাউন্ট, সেলার তালিকা, পেমেন্ট ও রিচার্জ ট্রানজেকশন, বুকিং অর্ডার, সাইট কনফিগারেশন ও চ্যাট হিস্ট্রি) ১-ক্লিকে ব্যাকআপ ডাউনলোড বা রিস্টোর করুন।
+                  </p>
+
+                  {/* Summary counts */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-center font-mono">
+                    <div className="bg-slate-950 p-2 rounded-xl border border-slate-800">
+                      <div className="text-xs text-slate-400 font-sans">কাস্টমার</div>
+                      <div className="text-sm font-bold text-cyan-400">{users.length} টি</div>
+                    </div>
+                    <div className="bg-slate-950 p-2 rounded-xl border border-slate-800">
+                      <div className="text-xs text-slate-400 font-sans">হোস্ট/সেলার</div>
+                      <div className="text-sm font-bold text-lime-400">{developers.length} জন</div>
+                    </div>
+                    <div className="bg-slate-950 p-2 rounded-xl border border-slate-800">
+                      <div className="text-xs text-slate-400 font-sans">পেমেন্ট রিকোয়েস্ট</div>
+                      <div className="text-sm font-bold text-amber-400">{paymentRequests.length} টি</div>
+                    </div>
+                    <div className="bg-slate-950 p-2 rounded-xl border border-slate-800">
+                      <div className="text-xs text-slate-400 font-sans">বুকিং অর্ডার</div>
+                      <div className="text-sm font-bold text-emerald-400">{orders.length} টি</div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+                    {/* Export / Download Backup */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        try {
+                          const backupData = {
+                            version: '2.0',
+                            exportedAt: new Date().toISOString(),
+                            users,
+                            developers,
+                            paymentRequests,
+                            withdrawRequests,
+                            orders,
+                            paymentSettings,
+                            siteConfig: editableConfig,
+                            botReplies,
+                            chatMessages,
+                          };
+                          const blob = new Blob([JSON.stringify(backupData, null, 2)], {
+                            type: 'application/json',
+                          });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `pts_database_backup_${new Date().toISOString().slice(0, 10)}.json`;
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                          URL.revokeObjectURL(url);
+                          sounds.playDiamond();
+                          alert('✅ সম্পূর্ণ ডাটাবেস ব্যাকআপ ফাইল সফলভাবে ডাউনলোড হয়েছে!');
+                        } catch (err) {
+                          alert('ব্যাকআপ নিতে সমস্যা হয়েছে: ' + String(err));
+                        }
+                      }}
+                      className="w-full sm:flex-1 py-3 px-4 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-emerald-500/20 transition active:scale-98 cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <Upload className="w-4 h-4 rotate-180" />
+                      <span>📥 ফুল ডাটাবেস ব্যাকআপ ডাউনলোড করুন (JSON)</span>
+                    </button>
+
+                    {/* Import / Restore Backup */}
+                    <label className="w-full sm:flex-1 py-3 px-4 bg-slate-800 hover:bg-slate-750 border border-slate-700 text-slate-200 hover:text-white font-bold text-xs rounded-xl transition active:scale-98 cursor-pointer flex items-center justify-center gap-2">
+                      <Upload className="w-4 h-4 text-cyan-400" />
+                      <span>📤 ব্যাকআপ JSON ফাইল রিস্টোর করুন</span>
+                      <input
+                        type="file"
+                        accept=".json,application/json"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = (event) => {
+                            try {
+                              const parsed = JSON.parse(event.target?.result as string);
+                              if (parsed && typeof parsed === 'object') {
+                                if (parsed.siteConfig) onUpdateSiteConfig(parsed.siteConfig);
+                                if (parsed.paymentSettings) onUpdateSettings(parsed.paymentSettings);
+                                if (parsed.developers && Array.isArray(parsed.developers)) {
+                                  localStorage.setItem('pts_developers_v2', JSON.stringify(parsed.developers));
+                                }
+                                if (parsed.users && Array.isArray(parsed.users)) {
+                                  localStorage.setItem('pts_users_v2', JSON.stringify(parsed.users));
+                                }
+                                if (parsed.paymentRequests && Array.isArray(parsed.paymentRequests)) {
+                                  localStorage.setItem('pts_payment_requests_v2', JSON.stringify(parsed.paymentRequests));
+                                }
+                                if (parsed.orders && Array.isArray(parsed.orders)) {
+                                  localStorage.setItem('pts_orders_v2', JSON.stringify(parsed.orders));
+                                }
+                                sounds.playSuccess();
+                                alert('🎉 ব্যাকআপ ডাটা সফলভাবে রিস্টোর করা হয়েছে! পরিবর্তনের জন্য পেজ রিফ্রেশ হতে পারে।');
+                                window.location.reload();
+                              }
+                            } catch (err) {
+                              alert('ভুল JSON ফরম্যাট! সঠিক ব্যাকআপ ফাইল নির্বাচন করুন।');
+                            }
+                          };
+                          reader.readAsText(file);
+                        }}
+                      />
+                    </label>
+                  </div>
                 </div>
               </div>
             )}

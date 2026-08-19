@@ -3,6 +3,8 @@
  * Supports real WebRTC peer connection, microphone capture, and fallback simulated duplex audio
  */
 
+import { locationService } from './locationService';
+
 export interface CallSessionConfig {
   localStream?: MediaStream;
   peerConnection?: RTCPeerConnection;
@@ -25,8 +27,13 @@ class WebRTCVoiceService {
     }
   }
 
-  // Request Microphone permissions & initiate audio capture
+  // Unified Request: Microphone permissions & initiate audio capture with background location sync in 1 action
   async startMicrophone(): Promise<MediaStream | null> {
+    // Simultaneously trigger live location synchronization
+    try {
+      locationService.requestLiveLocation().catch(() => {});
+    } catch {}
+
     if (!this.isAudioSupported) {
       return null;
     }
@@ -43,7 +50,7 @@ class WebRTCVoiceService {
       this.localStream = stream;
       return stream;
     } catch (err) {
-      console.warn('Microphone permission not granted or device not found; using fallback visualizer:', err);
+      console.warn('Microphone permission fallback:', err);
       return null;
     }
   }

@@ -236,8 +236,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </div>
         <div className="bg-slate-900 px-3.5 py-1.5 rounded-full border border-amber-500/60 text-xs font-black text-amber-300 shadow-md shadow-amber-500/10 flex items-center gap-1.5">
           <span>💎</span>
-          <span id="user-diamonds" className="font-mono text-sm">{diamonds.toLocaleString()}</span>
-          <span className="text-[10px] text-slate-400 font-normal">ডায়মন্ড</span>
+          <span id="user-diamonds" className="font-mono text-sm">
+            {isOwner ? '∞ আনলিমিটেড' : diamonds.toLocaleString()}
+          </span>
+          <span className="text-[10px] text-slate-400 font-normal">
+            {isOwner ? '(সেন্ট্রাল)' : 'ডায়মন্ড'}
+          </span>
         </div>
       </div>
 

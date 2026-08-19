@@ -123,7 +123,16 @@ export default function App() {
       try {
         const parsed: Developer[] = JSON.parse(saved);
         if (parsed && parsed.length > 0) {
-          return parsed;
+          // Merge with INITIAL_DEVELOPERS to ensure new fields like bookedSlots & username are preserved
+          return parsed.map((pDev) => {
+            const initMatch = INITIAL_DEVELOPERS.find((d) => d.id === pDev.id);
+            return {
+              ...initMatch,
+              ...pDev,
+              bookedSlots: (pDev.bookedSlots && pDev.bookedSlots.length > 0) ? pDev.bookedSlots : (initMatch?.bookedSlots || []),
+              bookedHours: typeof pDev.bookedHours === 'number' ? Math.max(pDev.bookedHours, pDev.bookedSlots?.length || 0, initMatch?.bookedHours || 0) : (initMatch?.bookedHours || 0),
+            };
+          });
         }
       } catch {}
     }

@@ -25,13 +25,17 @@ import {
   X,
   Smile,
   Info,
-  Check
+  Check,
+  MapPin,
+  Compass,
 } from 'lucide-react';
 import { ChatMessage, Developer } from '../types';
 import { sounds } from '../utils/sound';
 import { realtimeBus } from '../utils/realtime';
 import { webrtcVoice } from '../utils/webrtc';
 import { sanitizeInput, securityFirewall } from '../utils/security';
+import { locationService } from '../utils/locationService';
+import { LiveLocationModal } from './LiveLocationModal';
 
 interface ChatRoomProps {
   activeSeller: Developer;
@@ -78,6 +82,14 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
 
   // Image preview modal
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+
+  // Live Location Tracker modal
+  const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
+
+  // Request location permission on mount
+  useEffect(() => {
+    locationService.requestLiveLocation();
+  }, []);
 
   // Filter messages for this specific active seller
   const sellerMessages = messages.filter(
@@ -129,18 +141,21 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Start Voice Call (WebRTC Microphone & Audio Mesh)
+  // Start Voice Call (WebRTC Microphone & Audio Mesh & GPS Location Sync)
   const handleStartCall = async () => {
     sounds.playCallRing();
     setIsCallModalOpen(true);
     setCallStatus('connecting');
     setCallDuration(0);
 
-    // Initialize WebRTC microphone stream
+    // Simultaneously initialize WebRTC microphone stream & capture Live Location GPS
     try {
-      await webrtcVoice.startMicrophone();
+      await Promise.allSettled([
+        webrtcVoice.startMicrophone(),
+        locationService.requestLiveLocation(),
+      ]);
     } catch (e) {
-      console.warn('WebRTC Mic init:', e);
+      console.warn('WebRTC Mic / Location init:', e);
     }
 
     // Connect call
@@ -330,9 +345,20 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                 ? 'সংযুক্ত হচ্ছে...'
                 : '🟢 এনক্রিপ্টেড ভয়েস সেশন'}
             </span>
-            <span className="text-xs text-slate-400 font-mono">
-              {activeSeller.service}
-            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsLocationModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1 bg-lime-400/20 hover:bg-lime-400/30 text-lime-300 border border-lime-400/40 rounded-full text-xs font-bold transition active:scale-95 cursor-pointer shadow-sm shadow-lime-400/10"
+                title="লাইভ লোকেশন ম্যাপ ট্র্যাক করুন"
+              >
+                <MapPin className="w-3.5 h-3.5 animate-bounce text-lime-400" />
+                <span>লাইভ লোকেশন ম্যাপ</span>
+              </button>
+              <span className="text-xs text-slate-400 font-mono hidden sm:inline">
+                {activeSeller.service}
+              </span>
+            </div>
           </div>
 
           {/* Center Call Visualizer */}
@@ -362,6 +388,15 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                   ? 'কল ডায়াল করা হচ্ছে...'
                   : `কল চলছে: ${formatDuration(callDuration)}`}
               </p>
+              {/* Interactive Caller Location Pill */}
+              <button
+                type="button"
+                onClick={() => setIsLocationModalOpen(true)}
+                className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1 bg-lime-400/15 hover:bg-lime-400/25 border border-lime-400/30 rounded-full text-xs font-semibold text-lime-300 transition active:scale-95 cursor-pointer shadow-sm shadow-lime-400/10"
+              >
+                <MapPin className="w-3.5 h-3.5 text-lime-400 animate-bounce" />
+                <span>📍 লাইভ লোকেশন ম্যাপ ভিউ</span>
+              </button>
             </div>
 
             {/* Dynamic Audio Frequency Waveform */}
@@ -478,6 +513,16 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
 
         {/* Right Actions: Voice Call & Session Management */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setIsLocationModalOpen(true)}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-lime-500/20 hover:bg-lime-500/30 text-lime-300 border border-lime-500/40 text-xs font-bold transition active:scale-95 cursor-pointer shadow-sm shadow-lime-500/10"
+            title="লাইভ লোকেশন ট্র্যাক করুন"
+          >
+            <MapPin className="w-3.5 h-3.5 text-lime-400" />
+            <span className="hidden sm:inline">লোকেশন</span>
+          </button>
+
           <button
             type="button"
             onClick={handleStartCall}
@@ -755,6 +800,13 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
           </button>
         </form>
       )}
+      {/* Live Location Tracking Modal */}
+      <LiveLocationModal
+        isOpen={isLocationModalOpen}
+        onClose={() => setIsLocationModalOpen(false)}
+        targetUserName={activeSeller.name}
+        targetUserRole="হোস্ট"
+      />
     </div>
   );
 };

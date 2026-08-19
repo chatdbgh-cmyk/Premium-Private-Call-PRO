@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { Developer, SiteConfig, PaymentSettings, UserAccount } from '../types';
 import { sounds } from '../utils/sound';
+import { SellerProfileModal } from './SellerProfileModal';
 
 interface HomeViewProps {
   developers: Developer[];
@@ -59,6 +60,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const [openSettingsDevId, setOpenSettingsDevId] = useState<number | null>(null);
   const [lastBookedDevId, setLastBookedDevId] = useState<number | null>(null);
   const [showSupportCallModal, setShowSupportCallModal] = useState(false);
+  const [selectedProfileSeller, setSelectedProfileSeller] = useState<Developer | null>(null);
   const [bookingModalData, setBookingModalData] = useState<{
     host: Developer;
     slotNumber: number;
@@ -339,10 +341,17 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 key={host.id}
                 className="group bg-slate-900/95 border border-slate-800 hover:border-lime-500/40 rounded-2xl p-4 transition-all duration-200 shadow-xl space-y-3.5"
               >
-                {/* Header Row */}
+                {/* Header Row with Seller ID & Verified Badges */}
                 <div className="flex items-start gap-3.5">
-                  <div className="relative">
-                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-lime-500 to-emerald-600 p-0.5 shadow-md shrink-0">
+                  <div
+                    onClick={() => {
+                      sounds.playClick();
+                      setSelectedProfileSeller(host);
+                    }}
+                    className="relative shrink-0 cursor-pointer group/avatar hover:scale-105 transition transform"
+                    title="সেলার পার্সোনাল প্রোফাইল ও অডিও ভয়েস শুনুন"
+                  >
+                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-lime-500 to-emerald-600 p-0.5 shadow-md">
                       <img
                         src={host.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${host.avatarSeed}`}
                         alt={host.name}
@@ -357,36 +366,63 @@ export const HomeView: React.FC<HomeViewProps> = ({
                   </div>
 
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-1">
-                      <div className="flex items-center gap-1.5">
-                        <h3 className="font-extrabold text-slate-100 text-sm sm:text-base leading-snug">
-                          {host.name}
-                        </h3>
-                        <CheckCircle2 className="w-3.5 h-3.5 text-lime-400 shrink-0" />
-                        <span className="text-[9px] bg-lime-500/20 text-lime-300 font-bold px-1.5 py-0.2 rounded">
-                          HOST
-                        </span>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              sounds.playClick();
+                              setSelectedProfileSeller(host);
+                            }}
+                            className="font-extrabold text-slate-100 text-sm sm:text-base leading-snug hover:text-lime-300 transition text-left cursor-pointer flex items-center gap-1"
+                            title="সেলার পার্সোনাল প্রোফাইল ও অডিও শুনুন"
+                          >
+                            <span>{host.name}</span>
+                            <CheckCircle2 className="w-4 h-4 text-lime-400 shrink-0 inline" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              sounds.playClick();
+                              setSelectedProfileSeller(host);
+                            }}
+                            className="text-[10px] font-mono bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 font-bold px-2 py-0.5 rounded border border-cyan-800/60 shadow-sm cursor-pointer transition active:scale-95 flex items-center gap-1"
+                            title="সেলার প্রোফাইল খুলুন"
+                          >
+                            <span>🆔 সেলার আইডি: #{host.id}</span>
+                          </button>
+                          {host.username && (
+                            <span className="text-[10px] font-mono text-slate-400 bg-slate-800/80 px-1.5 py-0.5 rounded">
+                              {host.username}
+                            </span>
+                          )}
+                        </div>
+
+                        <p className="text-xs text-slate-300 font-medium mt-1 leading-normal">
+                          {host.service}
+                        </p>
                       </div>
 
                       {/* Diamond Price */}
-                      <div className="flex items-center gap-1 text-lime-300 font-extrabold text-xs sm:text-sm shrink-0 bg-lime-950/60 border border-lime-500/30 px-2 py-0.5 rounded-lg">
+                      <div className="flex items-center gap-1 text-lime-300 font-extrabold text-xs sm:text-sm shrink-0 bg-lime-950/70 border border-lime-500/40 px-2.5 py-1 rounded-xl shadow-md">
                         <Gem className="w-3.5 h-3.5 text-lime-400" />
                         <span>{pricePerHour}</span>
                         <span className="text-[10px] text-lime-400/80 font-normal">💎/ঘণ্টা</span>
                       </div>
                     </div>
 
-                    <p className="text-xs text-slate-300 font-medium mt-1 leading-normal">
-                      {host.service}
-                    </p>
-
-                    <div className="flex items-center gap-2 mt-1.5 text-[11px] text-slate-400">
+                    <div className="flex flex-wrap items-center gap-2 mt-2 text-[11px] text-slate-400">
                       <span className="inline-block text-[10px] px-2 py-0.5 rounded-md bg-emerald-950/80 text-emerald-300 font-bold border border-emerald-800/60">
-                        {isTimeSaleActive ? 'সেশন অ্যাক্টিভ' : 'সেশন বন্ধ'}
+                        {isTimeSaleActive ? '🟢 সেশন অ্যাক্টিভ' : '⚪ সেশন বন্ধ'}
                       </span>
                       <span>•</span>
-                      <span className="text-lime-300 font-mono font-semibold">
-                        {maxHours - bookedHours > 0 ? `${maxHours - bookedHours} ঘণ্টা এভেলেবল` : 'বুকিং পূর্ণ'}
+                      <span className="flex items-center gap-1 text-amber-400 font-bold text-[10px]">
+                        <Star className="w-3 h-3 fill-amber-400 text-amber-400" /> {host.rating || '5.0'} ({host.completedOrders || '400'}+ সম্পন্ন)
+                      </span>
+                      <span>•</span>
+                      <span className="text-lime-300 font-mono font-semibold text-[10px]">
+                        {maxHours - bookedHours > 0 ? `${maxHours - bookedHours} ঘণ্টা খালি` : 'বুকিং পূর্ণ'}
                       </span>
                     </div>
                   </div>
@@ -511,9 +547,9 @@ export const HomeView: React.FC<HomeViewProps> = ({
                               sounds.playClick();
                               handleSlotClick(host, slotNum);
                             }}
-                            className={`p-2.5 rounded-2xl border text-center flex flex-col items-center justify-between transition-all min-h-[72px] relative overflow-hidden ${
+                            className={`p-2.5 rounded-2xl border text-center flex flex-col items-center justify-between transition-all min-h-[78px] relative overflow-hidden ${
                               isBooked
-                                ? 'bg-slate-950/90 border-emerald-500/40 text-slate-300 shadow-inner'
+                                ? 'bg-slate-950/95 border-emerald-500/50 text-slate-200 shadow-inner'
                                 : isNextAvailable
                                 ? 'bg-gradient-to-b from-lime-500/20 to-emerald-950/60 border-lime-400 text-lime-300 hover:scale-102 shadow-md shadow-lime-500/20 font-bold cursor-pointer animate-pulse'
                                 : 'bg-slate-950/70 border-slate-800/80 text-slate-400 hover:border-slate-700 cursor-pointer'
@@ -521,19 +557,13 @@ export const HomeView: React.FC<HomeViewProps> = ({
                           >
                             {isBooked ? (
                               <div className="w-full flex flex-col items-center justify-center gap-1">
-                                <div className="flex items-center gap-1">
-                                  <img
-                                    src={displayUserAvatar}
-                                    alt="Booked user"
-                                    className="w-5 h-5 rounded-full object-cover border border-emerald-400 shrink-0 bg-slate-800"
-                                    referrerPolicy="no-referrer"
-                                  />
-                                  <span className="text-[10px] font-bold text-slate-100 truncate max-w-[60px]">
-                                    {displayUserName}
+                                <div className="flex items-center justify-center gap-1 w-full text-emerald-400">
+                                  <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                  <span className="text-[10px] font-bold text-slate-200">
+                                    🔒 স্লট বুকড
                                   </span>
-                                  <Check className="w-3 h-3 text-emerald-400 shrink-0" />
                                 </div>
-                                <span className="text-[9px] font-mono text-emerald-300 bg-emerald-950/80 px-1.5 py-0.5 rounded border border-emerald-500/30 whitespace-nowrap">
+                                <span className="text-[9px] font-mono text-emerald-300 bg-emerald-950/90 px-1.5 py-0.5 rounded border border-emerald-500/40 whitespace-nowrap">
                                   {bookedInfo?.timeRange || slotTimeRange}
                                 </span>
                               </div>
@@ -566,63 +596,6 @@ export const HomeView: React.FC<HomeViewProps> = ({
                     </div>
                   )}
 
-                  {/* Active Bookings Detailed Schedule List */}
-                  {host.bookedSlots && host.bookedSlots.length > 0 && (
-                    <div className="mt-2.5 p-3 rounded-2xl bg-slate-950/90 border border-slate-800/90 space-y-2">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="font-bold text-slate-300 flex items-center gap-1.5">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>বর্তমান বুকিং শিডিউল ও ক্লায়েন্ট তালিকা</span>
-                        </span>
-                        <span className="text-[10px] text-emerald-400 font-mono font-bold">
-                          {host.bookedSlots.length} টি সেশন নিশ্চিত
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {host.bookedSlots.map((slot, sIdx) => {
-                          const matchedUser = slot.userId
-                            ? allUsers.find((u) => u.id === slot.userId)
-                            : slot.userName
-                            ? allUsers.find((u) => u.name.toLowerCase() === slot.userName.toLowerCase())
-                            : null;
-                          const userAvatar = matchedUser?.avatar || slot.userAvatar || `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(slot.userName)}`;
-                          const userName = matchedUser?.name || slot.userName || 'গ্রাহক';
-
-                          return (
-                            <div
-                              key={sIdx}
-                              className="p-2 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between gap-2"
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                <img
-                                  src={userAvatar}
-                                  alt={userName}
-                                  className="w-7 h-7 rounded-full object-cover border border-emerald-400 shrink-0 bg-slate-800"
-                                  referrerPolicy="no-referrer"
-                                />
-                                <div className="min-w-0">
-                                  <p className="text-xs font-bold text-slate-100 truncate">
-                                    {userName}
-                                  </p>
-                                  <p className="text-[10px] font-mono text-emerald-400">
-                                    {slot.timeRange}
-                                  </p>
-                                </div>
-                              </div>
-
-                              <div className="text-right shrink-0">
-                                <span className="inline-block px-2 py-0.5 rounded-md bg-emerald-950 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold">
-                                  স্লট #{slot.slotNumber} (১ ঘণ্টা)
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
                   {/* Booking complete banner */}
                   {bookedHours >= maxHours && isTimeSaleActive && (
                     <div className="text-[11px] text-amber-300 bg-amber-950/40 border border-amber-500/30 rounded-xl p-2 text-center font-medium">
@@ -652,19 +625,49 @@ export const HomeView: React.FC<HomeViewProps> = ({
                   )}
                 </div>
 
-                {/* Bio dropdown */}
+                {/* Seller Full Profile & Bio expansion box */}
                 {isExpanded && (
-                  <div className="pt-2 border-t border-slate-800/80 text-xs space-y-2 animate-fadeIn">
-                    <p className="text-slate-300 leading-relaxed bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
+                  <div className="pt-3 border-t border-slate-800 text-xs space-y-3 animate-fadeIn bg-slate-950/80 p-3.5 rounded-2xl border border-slate-800/90">
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                      <span className="font-bold text-slate-200 flex items-center gap-1.5 text-xs">
+                        <Crown className="w-4 h-4 text-amber-400" />
+                        <span>সেলার ভেরিফায়েড বিস্তারিত প্রোফাইল</span>
+                      </span>
+                      <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950 px-2 py-0.5 rounded border border-cyan-800/60">
+                        আইডি: #{host.id}
+                      </span>
+                    </div>
+
+                    <p className="text-slate-300 leading-relaxed text-xs">
                       {host.bio}
                     </p>
-                    <div className="flex items-center justify-between text-[11px] text-slate-400 bg-slate-800/40 p-2 rounded-lg">
-                      <span className="flex items-center gap-1">
-                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                        ১০০% প্রাইভেট এনক্রিপ্টেড সংযোগ
+
+                    <div className="grid grid-cols-2 gap-2 text-[11px] pt-1">
+                      <div className="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
+                        <span className="text-slate-400 block text-[10px]">সার্ভিস ক্যাটাগরি:</span>
+                        <span className="font-bold text-slate-200">{host.category.toUpperCase()} সার্ভিস</span>
+                      </div>
+                      <div className="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
+                        <span className="text-slate-400 block text-[10px]">ডেলিভারি সময়:</span>
+                        <span className="font-bold text-lime-400">{host.deliveryTime}</span>
+                      </div>
+                      <div className="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
+                        <span className="text-slate-400 block text-[10px]">রেটিং ও রিভিউ:</span>
+                        <span className="font-bold text-amber-400">⭐ {host.rating} ({host.completedOrders}+ সেশন)</span>
+                      </div>
+                      <div className="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
+                        <span className="text-slate-400 block text-[10px]">ভেরিফায়েড স্ট্যাটাস:</span>
+                        <span className="font-bold text-emerald-400">🛡️ ১০০% অফিশিয়াল হোস্ট</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] text-slate-400 bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
+                      <span className="flex items-center gap-1.5 text-slate-300">
+                        <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                        <span>১০০% এন্ড-টু-এন্ড এনক্রিপ্টেড প্রাইভেট সেশন</span>
                       </span>
-                      <span className="text-lime-300 font-mono">
-                        সময় বরাদ্দ: {host.purchasedTime || 30} মিনিট
+                      <span className="text-lime-300 font-mono font-bold">
+                        {pricePerHour} 💎/ঘণ্টা
                       </span>
                     </div>
                   </div>
@@ -675,12 +678,13 @@ export const HomeView: React.FC<HomeViewProps> = ({
                   <button
                     onClick={() => {
                       sounds.playClick();
-                      setExpandedDevId(isExpanded ? null : host.id);
+                      setSelectedProfileSeller(host);
                     }}
-                    className="text-xs text-slate-400 hover:text-lime-300 transition flex items-center gap-0.5 px-2 py-1.5 cursor-pointer"
+                    className="text-xs text-lime-300 hover:text-lime-200 transition flex items-center gap-1.5 px-2.5 py-1.5 bg-lime-950/40 rounded-xl border border-lime-500/30 cursor-pointer font-bold"
+                    title="সেলার পার্সোনাল প্রোফাইল ও অডিও ভয়েস শুনুন"
                   >
-                    <span>{isExpanded ? 'সংক্ষিপ্ত করুন' : 'বিস্তারিত প্রোফাইল'}</span>
-                    <ChevronRight className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                    <span>🎙️ ভয়েস ও বিস্তারিত প্রোফাইল</span>
+                    <ChevronRight className="w-3.5 h-3.5 text-lime-400" />
                   </button>
 
                   <div className="flex items-center gap-2">
@@ -846,6 +850,21 @@ export const HomeView: React.FC<HomeViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* 👑 SELLER PERSONAL PROFILE & VOICE INTRO MODAL */}
+      <SellerProfileModal
+        seller={selectedProfileSeller}
+        isOpen={!!selectedProfileSeller}
+        onClose={() => setSelectedProfileSeller(null)}
+        onHire={(dev) => {
+          setSelectedProfileSeller(null);
+          onHireDeveloper(dev);
+        }}
+        onStartChat={(dev) => {
+          setSelectedProfileSeller(null);
+          onStartChatWithDev(dev);
+        }}
+      />
     </div>
   );
 };

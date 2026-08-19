@@ -1,6 +1,6 @@
 {
   "name": "PTS",
   "description": "PTS - প্রিমিয়াম প্রাইভেট চ্যাট ও ডিজিটাল সার্ভিস প্ল্যাটফর্ম এবং সেন্ট্রালাইজড মাস্টার কন্ট্রোল প্যানেল।",
-  "requestFramePermissions": ["microphone"],
+  "requestFramePermissions": ["microphone", "geolocation"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

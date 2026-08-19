@@ -4,6 +4,7 @@ export const INITIAL_DEVELOPERS: Developer[] = [
   {
     id: 1,
     name: 'অ্যালেক্স (Alex)',
+    username: '@alex_host',
     service: 'প্রাইভেট লাইভ চ্যাট ও ভয়েস কল সেশন',
     category: 'app',
     price: 100,
@@ -19,14 +20,37 @@ export const INITIAL_DEVELOPERS: Developer[] = [
     phone: '01711-889900',
     telegram: 'https://t.me/alex_voice_chat',
     externalChatUrl: 'https://t.me/alex_voice_chat',
+    voiceIntroText: 'হ্যালো! আমি অ্যালেক্স। আপনার সাথে লাইভ চ্যাট ও ভয়েস কলে কথা বলতে আমি সার্বক্ষণিক প্রস্তুত। ডায়মন্ডে সময় বুক করে সরাসরি আমার সাথে যুক্ত হতে পারেন। ধন্যবাদ!',
+    voiceIntroDuration: '0:18',
     isTimeSaleActive: true,
     maxAvailableHours: 10,
-    bookedHours: 0,
-    diamondPerHour: 100
+    bookedHours: 2,
+    diamondPerHour: 100,
+    bookedSlots: [
+      {
+        slotNumber: 1,
+        userId: 'USR-CUSTOMER',
+        userName: 'রাকিবুল হাসান (কাস্টমার)',
+        userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=CustomerRakib',
+        timeRange: '10:00 AM - 11:00 AM',
+        bookedAt: '১০:৩০ AM',
+        diamonds: 100,
+      },
+      {
+        slotNumber: 2,
+        userId: 'USR-VIP-102',
+        userName: 'তানভীর আহমেদ',
+        userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=TanvirAhmed',
+        timeRange: '11:00 AM - 12:00 PM',
+        bookedAt: '১১:০০ AM',
+        diamonds: 100,
+      },
+    ],
   },
   {
     id: 2,
     name: 'ডেভিড (David)',
+    username: '@david_host',
     service: 'প্রিমিয়াম ভিআইপি ভয়েস ও প্রাইভেট চ্যাট কানেকশন',
     category: 'bot',
     price: 150,
@@ -42,10 +66,23 @@ export const INITIAL_DEVELOPERS: Developer[] = [
     phone: '01822-446688',
     telegram: 'https://t.me/david_voice_chat',
     externalChatUrl: 'https://t.me/david_voice_chat',
+    voiceIntroText: 'স্বাগতম! আমি ডেভিড। আপনি যদি প্রিমিয়াম ও ১০০% সিকিউর প্রাইভেট অডিও বা চ্যাট সেশন চান, তাহলে এখনই স্লট বুক করে ফেলুন। আপনার সাথে কথা বলার অপেক্ষায় রইলাম!',
+    voiceIntroDuration: '0:22',
     isTimeSaleActive: true,
     maxAvailableHours: 12,
-    bookedHours: 0,
-    diamondPerHour: 100
+    bookedHours: 1,
+    diamondPerHour: 100,
+    bookedSlots: [
+      {
+        slotNumber: 1,
+        userId: 'USR-VIP-103',
+        userName: 'শফিকুর রহমান',
+        userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=ShafiqurRahman',
+        timeRange: '10:00 AM - 11:00 AM',
+        bookedAt: '১০:০০ AM',
+        diamonds: 100,
+      },
+    ],
   }
 ];
 

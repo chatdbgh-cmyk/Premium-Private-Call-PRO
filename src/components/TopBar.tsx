@@ -112,15 +112,18 @@ export const TopBar: React.FC<TopBarProps> = ({
         {/* Diamond balance badge */}
         <button
           onClick={onDiamondClick}
+          title={isOwner ? 'মাস্টার ওনার: আনলিমিটেড ডায়মন্ড সেন্ট্রাল' : 'ডায়মন্ড রিচার্জ ও ব্যালেন্স'}
           className="group flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-gradient-to-r from-emerald-950/80 to-slate-900 border border-emerald-500/40 text-emerald-300 hover:border-lime-400 hover:shadow-lg hover:shadow-lime-500/20 transition-all active:scale-95 cursor-pointer"
         >
           <Gem className="w-3.5 h-3.5 text-lime-400 group-hover:scale-110 transition-transform animate-pulse" />
           <span className="font-bold text-xs sm:text-sm tracking-wide text-lime-200">
-            {diamonds.toLocaleString()}
+            {isOwner ? '∞ আনলিমিটেড' : diamonds.toLocaleString()}
           </span>
-          <span className="text-[10px] bg-lime-500/20 text-lime-300 px-1 py-0.2 rounded font-semibold">
-            +
-          </span>
+          {!isOwner && (
+            <span className="text-[10px] bg-lime-500/20 text-lime-300 px-1 py-0.2 rounded font-semibold">
+              +
+            </span>
+          )}
         </button>
       </div>
     </header>

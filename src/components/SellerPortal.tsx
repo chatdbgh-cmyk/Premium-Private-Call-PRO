@@ -30,10 +30,16 @@ import {
   Smartphone,
   AlertCircle,
   Copy,
-  History
+  History,
+  MapPin,
+  Compass,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 import { Developer, ServiceOrder, ChatMessage, UserAccount, SellerWithdrawRequest } from '../types';
 import { sounds } from '../utils/sound';
+import { LiveLocationModal } from './LiveLocationModal';
+import { locationService } from '../utils/locationService';
 
 interface SellerPortalProps {
   seller: Developer;
@@ -81,11 +87,18 @@ export const SellerPortal: React.FC<SellerPortalProps> = ({
   const [avatarUrl, setAvatarUrl] = useState(seller.avatar || sellerAccount?.avatar || '');
   const [isOnline, setIsOnline] = useState(seller.online);
   const [diamondPerHour, setDiamondPerHour] = useState(seller.diamondPerHour?.toString() || '100');
+  const [voiceIntroText, setVoiceIntroText] = useState(seller.voiceIntroText || '');
+  const [voiceIntroDuration, setVoiceIntroDuration] = useState(seller.voiceIntroDuration || '0:20');
+  const [isPlayingTestVoice, setIsPlayingTestVoice] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
 
   // Chat state
   const [chatText, setChatText] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+
+  // Live Location Modal state
+  const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
+  const [trackedCustomerName, setTrackedCustomerName] = useState('কাস্টমার');
 
   // Diamond Withdraw State
   const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
@@ -151,11 +164,40 @@ export const SellerPortal: React.FC<SellerPortalProps> = ({
       avatar: avatarUrl || undefined,
       online: isOnline,
       diamondPerHour: parseInt(diamondPerHour) || 100,
+      voiceIntroText: voiceIntroText.trim(),
+      voiceIntroDuration: voiceIntroDuration.trim() || '0:20',
     });
 
     setIsSaved(true);
     sounds.playSuccess();
     setTimeout(() => setIsSaved(false), 2500);
+  };
+
+  const handleTestVoice = () => {
+    sounds.playClick();
+    if (isPlayingTestVoice) {
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      setIsPlayingTestVoice(false);
+      return;
+    }
+
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const textToSpeak =
+        voiceIntroText.trim() ||
+        `হ্যালো! আমি ${name.trim() || 'হোস্ট'}। আমার সাথে লাইভ চ্যাট ও ভয়েস কলে যুক্ত হতে স্লট বুক করুন।`;
+      
+      const utterance = new SpeechSynthesisUtterance(textToSpeak);
+      utterance.lang = 'bn-BD';
+      utterance.rate = 0.95;
+      utterance.pitch = 1.05;
+
+      utterance.onstart = () => setIsPlayingTestVoice(true);
+      utterance.onend = () => setIsPlayingTestVoice(false);
+      utterance.onerror = () => setIsPlayingTestVoice(false);
+
+      window.speechSynthesis.speak(utterance);
+    }
   };
 
   const handleSendReply = (e: React.FormEvent) => {
@@ -513,6 +555,35 @@ export const SellerPortal: React.FC<SellerPortalProps> = ({
             />
           </div>
 
+          {/* 🎙️ Voice Intro / Voice Greeting Settings */}
+          <div className="p-3.5 rounded-2xl bg-gradient-to-r from-cyan-950/40 via-slate-950 to-indigo-950/40 border border-cyan-500/30 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-bold text-cyan-300 flex items-center gap-1.5">
+                <Volume2 className="w-4 h-4 text-cyan-400" />
+                <span>সেলার ভয়েস অডিও মেসেজ ও ইন্ট্রো:</span>
+              </label>
+              <button
+                type="button"
+                onClick={handleTestVoice}
+                className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 transition flex items-center gap-1 cursor-pointer"
+              >
+                {isPlayingTestVoice ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+                <span>{isPlayingTestVoice ? 'থামান' : '🔊 ভয়েস টেস্ট শুনুন'}</span>
+              </button>
+            </div>
+            
+            <textarea
+              rows={2}
+              value={voiceIntroText}
+              onChange={(e) => setVoiceIntroText(e.target.value)}
+              placeholder="হ্যালো! আমি হোস্ট। লাইভ চ্যাট ও অডিও কলে কথা বলতে সময় বুক করুন..."
+              className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl px-3.5 py-2 text-xs text-slate-200 focus:outline-none"
+            />
+            <p className="text-[10px] text-slate-400">
+              💡 গ্রাহকরা আপনার প্রোফাইলে ঢুকলে এই ভয়েস মেসেজ শুনতে পারবে।
+            </p>
+          </div>
+
           {/* Contact Details */}
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1">
@@ -694,6 +765,19 @@ export const SellerPortal: React.FC<SellerPortalProps> = ({
                 কাস্টমারদের সাথে সরাসরি কথা বলুন এবং সার্ভিস সংক্রান্ত উত্তর দিন।
               </p>
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                sounds.playClick();
+                setTrackedCustomerName('অ্যাক্টিভ কাস্টমার');
+                setIsLocationModalOpen(true);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-lime-500/20 hover:bg-lime-500/30 text-lime-300 border border-lime-500/40 text-xs font-bold transition active:scale-95 cursor-pointer shadow-sm shadow-lime-500/10"
+              title="কাস্টমারের জিপিএস ও লাইভ অবস্থান ট্র্যাক করুন"
+            >
+              <MapPin className="w-3.5 h-3.5 text-lime-400" />
+              <span>📍 কাস্টমার লাইভ লোকেশন</span>
+            </button>
           </div>
 
           {/* Messages Container */}
@@ -1191,6 +1275,13 @@ export const SellerPortal: React.FC<SellerPortalProps> = ({
           </div>
         </div>
       )}
+      {/* Live Location Tracking Modal */}
+      <LiveLocationModal
+        isOpen={isLocationModalOpen}
+        onClose={() => setIsLocationModalOpen(false)}
+        targetUserName={trackedCustomerName}
+        targetUserRole="কাস্টমার"
+      />
     </div>
   );
 };
