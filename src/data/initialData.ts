@@ -1,0 +1,227 @@
+import { Developer, RechargePackage, PaymentSettings, SiteConfig, UserAccount, BotAutoReply, SellerWithdrawRequest } from '../types';
+
+export const INITIAL_DEVELOPERS: Developer[] = [
+  {
+    id: 1,
+    name: 'অ্যালেক্স (Alex)',
+    service: 'প্রাইভেট লাইভ চ্যাট ও ভয়েস কল সেশন',
+    category: 'app',
+    price: 100,
+    rating: 5.0,
+    completedOrders: 420,
+    avatarSeed: 'Alex_Host',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Alex_Voice',
+    bio: '২৪/৭ অ্যাক্টিভ প্রাইভেট চ্যাট ও ভয়েস কল হোস্ট। ডায়মন্ড দিয়ে সময় বুক করে সরাসরি প্রাইভেট ইন-অ্যাপ চ্যাট ও লাইভ ভয়েস কলে কানেক্ট হয়ে কথা বলুন।',
+    skills: ['🎙️ ভয়েস কল', '💬 প্রাইভেট চ্যাট', '🚀 ইনস্ট্যান্ট কানেক্ট', '🔒 ফুল প্রাইভেসি', '⚡ এইচডি অডিও'],
+    online: true,
+    deliveryTime: 'ইনস্ট্যান্ট কানেক্ট',
+    purchasedTime: 45,
+    phone: '01711-889900',
+    telegram: 'https://t.me/alex_voice_chat',
+    externalChatUrl: 'https://t.me/alex_voice_chat',
+    isTimeSaleActive: true,
+    maxAvailableHours: 10,
+    bookedHours: 0,
+    diamondPerHour: 100
+  },
+  {
+    id: 2,
+    name: 'ডেভিড (David)',
+    service: 'প্রিমিয়াম ভিআইপি ভয়েস ও প্রাইভেট চ্যাট কানেকশন',
+    category: 'bot',
+    price: 150,
+    rating: 4.9,
+    completedOrders: 380,
+    avatarSeed: 'David_Host',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=David_Voice',
+    bio: 'ডেভিড এর সাথে সরাসরি ভিআইপি অডিও কল ও চ্যাট সেশন। ডায়মন্ডে বুকিং করে সরাসরি লিঙ্ক ও পোর্টালে জয়েন করে লাইভ কথা বলুন।',
+    skills: ['👑 ভিআইপি কল', '🎙️ এইচডি অডিও', '💬 সিক্রেট চ্যাট', '⚡ রিয়েলটাইম ভয়েস', '🛡️ ১০০% সিকিউর'],
+    online: true,
+    deliveryTime: 'ইনস্ট্যান্ট কানেক্ট',
+    purchasedTime: 30,
+    phone: '01822-446688',
+    telegram: 'https://t.me/david_voice_chat',
+    externalChatUrl: 'https://t.me/david_voice_chat',
+    isTimeSaleActive: true,
+    maxAvailableHours: 12,
+    bookedHours: 0,
+    diamondPerHour: 100
+  }
+];
+
+export const RECHARGE_PACKAGES: RechargePackage[] = [
+  { id: 'pkg-1', diamonds: 100, bonus: 0, bdtPrice: 100, badge: 'স্টার্টার' },
+  { id: 'pkg-2', diamonds: 300, bonus: 30, bdtPrice: 300, popular: true, badge: '+৩০ বোনাস' },
+  { id: 'pkg-3', diamonds: 500, bonus: 75, bdtPrice: 500, badge: '+৭৫ বোনাস' },
+  { id: 'pkg-4', diamonds: 1000, bonus: 200, bdtPrice: 1000, badge: '🔥 ভিআইপি অফার (+২০০)' },
+  { id: 'pkg-5', diamonds: 2500, bonus: 600, bdtPrice: 2500, badge: '👑 মেগা সেভার (+৬০০)' }
+];
+
+export const INITIAL_SETTINGS: PaymentSettings = {
+  bkashNumber: '01798-234567',
+  nagadNumber: '01812-345678',
+  rocketNumber: '01934-567890',
+  upayNumber: '01655-432109',
+  telegramSupportUrl: 'https://t.me/PrivateChatSupport_Official',
+  ratePerDiamondBdt: 1
+};
+
+export const INITIAL_SITE_CONFIG: SiteConfig = {
+  siteName: 'PTS',
+  siteTagline: 'প্রাইভেট লাইভ চ্যাট ও ভয়েস কলিং প্ল্যাটফর্ম',
+  bannerNotice: '🎙️ অ্যালেক্স ও ডেভিডের সাথে সরাসরি চ্যাট ও ভয়েস কলে কথা বলতে ডায়মন্ডে সেশন বুক করুন!',
+  showBannerNotice: true,
+  marqueeAlert: '⚡️ PTS লাইভ: অ্যালেক্স ও ডেভিড অনলাইন আছেন | রিয়েলটাইম প্রাইভেট চ্যাট ও ভয়েস কল লিঙ্ক প্রস্তুত | ২৪/৭ সাপোর্ট!',
+  showMarquee: true,
+  maintenanceMode: false,
+  adminPin: '1234',
+  telegramChannel: 'https://t.me/PrivateChatServices',
+  minRechargeAmount: 50,
+  supportStatus: 'active',
+  // Dynamic Homepage Support Notice Box
+  homeSupportNotice: 'যেকোনো প্রয়োজনে বা তথ্যের জন্য আমাদের সার্বক্ষণিক লাইভ চ্যাট অথবা সাপোর্ট সেন্টারে যোগাযোগ করুন। তাৎক্ষণিক সেবা নিশ্চিত করা হয়।',
+  showHomeSupportNotice: true,
+  // Multi-Banner Slider System
+  showPopupBanner: true,
+  popupBannerImage: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1000&q=80',
+  popupBannerTitle: '🎉 বিশেষ অফার ও ঘোষণা!',
+  popupBannerSubtitle: 'আজকের স্পেশাল ডায়মন্ড রিচার্জ বোনাস ও লাইভ ভয়েস কল সেশনে আকর্ষণীয় ডিসকাউন্ট উপভোগ করুন।',
+  popupBannerLink: '',
+  popupBannerButtonText: 'এখনই শুরু করুন',
+  popupBanners: [
+    {
+      id: 'banner-1',
+      image: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1000&q=80',
+      title: '🎉 বিশেষ অফার ও ঘোষণা!',
+      subtitle: 'আজকের স্পেশাল ডায়মন্ড রিচার্জ বোনাস ও লাইভ ভয়েস কল সেশনে আকর্ষণীয় ডিসকাউন্ট উপভোগ করুন।',
+      buttonText: 'এখনই রিচার্জ করুন',
+      link: '',
+      active: true,
+    },
+    {
+      id: 'banner-2',
+      image: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=1000&q=80',
+      title: '🎙️ ভয়েস কল ও লাইভ চ্যাট সেশন',
+      subtitle: 'আমাদের দক্ষ ও জনপ্রিয় হোস্টদের সাথে কথা বলতে বুকিং সম্পন্ন করুন সম্পূর্ণ গোপনীয়তায়।',
+      buttonText: 'হোস্টদের সাথে কথা বলুন',
+      link: '',
+      active: true,
+    },
+    {
+      id: 'banner-3',
+      image: 'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?auto=format&fit=crop&w=1000&q=80',
+      title: '💎 নতুন একাউন্টে ৫০ 💎 ফ্রি বোনাস!',
+      subtitle: 'প্রতিটি রিচার্জে পাচ্ছেন ২০% অতিরিক্ত বোনাস ডায়মন্ড অফার। সীমিত সময়ের সুযোগ!',
+      buttonText: 'অফারটি নিন',
+      link: '',
+      active: true,
+    }
+  ],
+  welcomeBonusDiamonds: 50,
+  rechargeBonusPercentage: 20,
+  rechargeFlatBonusDiamonds: 10,
+  freeDiamondsOfferEnabled: true,
+  freeDiamondsOfferTitle: '🎁 নতুন একাউন্ট খুললেই ৫০ 💎 ফ্রি ওয়েলকাম বোনাস + প্রতিটি রিচার্জে ২০% অতিরিক্ত ডায়মন্ড অফার!',
+};
+
+export const INITIAL_USERS: UserAccount[] = [
+  {
+    id: 'USR-OWNER',
+    name: 'usplabonadmin@gmail.com',
+    username: '@plabon_owner',
+    bio: '👑 সিস্টেম ওনার ও মাস্টার ডাটাবেজ কন্ট্রোলার',
+    phone: 'plabon252686',
+    password: 'plabon252686',
+    diamonds: 999999,
+    isBanned: false,
+    joinedDate: '2026-08-14',
+    role: 'owner',
+    avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=OwnerPlabon'
+  },
+  {
+    id: 'USR-CUSTOMER',
+    name: 'রাকিবুল হাসান (কাস্টমার)',
+    username: '@rakibul_customer',
+    bio: '💎 সাধারণ কাস্টমার ও ভেরিফায়েড ক্লায়েন্ট',
+    phone: '01712-345678',
+    password: '1234',
+    diamonds: 350,
+    isBanned: false,
+    joinedDate: '2026-08-15',
+    role: 'user',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=CustomerRakib'
+  },
+  {
+    id: 'USR-ALEX',
+    name: 'Alex',
+    username: '@alex_host',
+    bio: 'অফিসিয়াল প্রাইভেট চ্যাট ও ভয়েস হোস্ট | ১০ ঘণ্টা সেশন এভেলেবল',
+    phone: '01711-889900',
+    password: '1234',
+    diamonds: 750,
+    isBanned: false,
+    joinedDate: '2026-08-10',
+    role: 'seller',
+    sellerId: 1,
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Alex_Voice'
+  },
+  {
+    id: 'USR-DAVID',
+    name: 'David',
+    username: '@david_host',
+    bio: 'এক্সক্লুসিভ লাইভ পরামর্শক ও ভয়েস পার্টনার',
+    phone: '01822-445566',
+    password: '1234',
+    diamonds: 500,
+    isBanned: false,
+    joinedDate: '2026-08-12',
+    role: 'seller',
+    sellerId: 2,
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=David_Voice'
+  }
+];
+
+export const INITIAL_BOT_REPLIES: BotAutoReply[] = [
+  {
+    id: 'rep-1',
+    trigger: 'ডায়মন্ড / রিচার্জ',
+    response: '💎 ডায়মন্ড রিচার্জ করতে উপরের "ডায়মন্ড কিনুন" বাটনে ক্লিক করে বিকাশ, নগদ বা রকেটে টাকা পাঠিয়ে TrxID সাবমিট করুন। অ্যাডমিন অনুমোদনের সাথে সাথে ব্যালেন্স যোগ হবে।',
+    enabled: true
+  },
+  {
+    id: 'rep-2',
+    trigger: 'অর্ডার / সার্ভিস',
+    response: '📦 যেকোনো ডেভেলপারের সার্ভিস নিতে ডায়মন্ড দিয়ে সরাসরি অর্ডার করুন। কাজ শুরু হলে চ্যাটে লাইভ আপডেট পাবেন।',
+    enabled: true
+  },
+  {
+    id: 'rep-3',
+    trigger: 'টেলিগ্রাম / যোগাযোগ',
+    response: '✈️ সরাসরি আমাদের অফিসিয়াল টেলিগ্রাম চ্যানেলে যুক্ত হতে সাপোর্ট লিঙ্কে ক্লিক করুন।',
+    enabled: true
+  },
+  {
+    id: 'rep-4',
+    trigger: 'সিকিউরিটি / ট্রাস্ট',
+    response: '🛡️ আপনার পেমেন্ট ১০০% নিরাপদ ও এস্ক্রো প্রটেক্টেড। কাজ শেষ ও সন্তুষ্ট না হওয়া পর্যন্ত ডেভেলপার পেমেন্ট পাবে না।',
+    enabled: true
+  }
+];
+
+export const INITIAL_WITHDRAW_REQUESTS: SellerWithdrawRequest[] = [
+  {
+    id: 'WDR-9021',
+    sellerId: 1,
+    sellerName: 'অ্যালেক্স (Alex)',
+    sellerAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Alex_Voice',
+    sellerPhone: '01711-889900',
+    amountDiamonds: 250,
+    bdtAmount: 250,
+    paymentMethod: 'bKash',
+    accountNumber: '01711-889900',
+    accountType: 'Personal',
+    requestedAt: '2026-08-18 10:15 AM',
+    status: 'pending',
+    adminNote: 'সেলার ইনকাম উইথড্র রিকোয়েস্ট'
+  }
+];

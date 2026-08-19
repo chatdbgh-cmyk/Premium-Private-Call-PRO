@@ -1,0 +1,284 @@
+import React, { useState } from 'react';
+import {
+  MessageCircle,
+  Search,
+  Sparkles,
+  Shield,
+  ShieldCheck,
+  CheckCircle,
+  Clock,
+  Phone,
+  Lock,
+  ChevronRight,
+  Filter,
+  User,
+  ShoppingBag,
+  ExternalLink,
+  Bot
+} from 'lucide-react';
+import { Developer, ServiceOrder } from '../types';
+import { sounds } from '../utils/sound';
+
+interface SellerChatListProps {
+  sellers: Developer[];
+  orders: ServiceOrder[];
+  onSelectSeller: (seller: Developer) => void;
+  onOpenSupportBot: () => void;
+  isAdmin?: boolean;
+  activeSellerId?: number | null;
+}
+
+export const SellerChatList: React.FC<SellerChatListProps> = ({
+  sellers,
+  orders,
+  onSelectSeller,
+  onOpenSupportBot,
+  isAdmin = false,
+  activeSellerId,
+}) => {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterMode, setFilterMode] = useState<'purchased' | 'all'>('purchased');
+
+  // Identify sellers from whom user purchased time/services
+  const purchasedSellerIds = new Set(orders.map((o) => o.developerId));
+
+  // Determine purchased time for each seller based on orders or default time
+  const getPurchasedTimeDisplay = (seller: Developer) => {
+    const userOrdersForSeller = orders.filter((o) => o.developerId === seller.id);
+    if (userOrdersForSeller.length > 0) {
+      return `${userOrdersForSeller.length * 30} মিনিট (${userOrdersForSeller.length}টি সার্ভিস)`;
+    }
+    return `${seller.purchasedTime || 30} মিনিট`;
+  };
+
+  // Filter sellers list
+  const filteredSellers = sellers.filter((seller) => {
+    const matchesSearch =
+      seller.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      seller.service.toLowerCase().includes(searchQuery.toLowerCase());
+
+    if (!matchesSearch) return false;
+
+    if (filterMode === 'purchased') {
+      // In purchased mode, show sellers who have orders or are in initial purchased list
+      return purchasedSellerIds.has(seller.id) || (seller.purchasedTime && seller.purchasedTime > 0);
+    }
+    return true;
+  });
+
+  return (
+    <div className="bg-slate-950 text-slate-100 min-h-[480px] rounded-2xl border border-slate-800/80 overflow-hidden shadow-2xl flex flex-col animate-fadeIn">
+      {/* TikTok Style Header */}
+      <div className="p-3.5 sm:p-4 bg-slate-900/90 border-b border-slate-800 sticky top-0 z-10 backdrop-blur-md">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-pink-500 to-rose-600 flex items-center justify-center shadow-md shadow-pink-500/20">
+              <MessageCircle className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <h3 className="font-bold text-sm sm:text-base text-slate-100 leading-tight">
+                আপনার চ্যাটসমূহ (Inbox)
+              </h3>
+              <p className="text-[10px] text-slate-400">
+                {filterMode === 'purchased' ? 'শুধুমাত্র সময় কেনা সেলারদের তালিকা' : 'সকল ভেরিফায়েড সেলার'}
+              </p>
+            </div>
+          </div>
+
+          {/* Privacy status tag */}
+          <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-800 border border-slate-700 text-[10px] font-semibold text-slate-300">
+            {isAdmin ? (
+              <span className="text-emerald-400 flex items-center gap-1">
+                <ShieldCheck className="w-3 h-3" /> অ্যাডমিন ভিউ (ফোন নম্বর সহ)
+              </span>
+            ) : (
+              <span className="text-cyan-300 flex items-center gap-1">
+                <Lock className="w-3 h-3 text-cyan-400" /> প্রাইভেসি প্রটেক্টেড
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Search Bar */}
+        <div className="relative mb-2.5">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="সেলার বা সার্ভিস খুঁজুন..."
+            className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none transition"
+          />
+        </div>
+
+        <div className="flex items-center gap-1.5 p-1 bg-slate-950 rounded-xl border border-slate-800/80">
+          <button
+            type="button"
+            onClick={() => {
+              setFilterMode('purchased');
+              sounds.playClick();
+            }}
+            className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+              filterMode === 'purchased'
+                ? 'bg-gradient-to-r from-lime-400 to-emerald-500 text-slate-950 shadow-md'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <ShoppingBag className="w-3.5 h-3.5" />
+            <span>সময় বরাদ্দকৃত হোস্ট ({filteredSellers.length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setFilterMode('all');
+              sounds.playClick();
+            }}
+            className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+              filterMode === 'all'
+                ? 'bg-gradient-to-r from-lime-400 to-emerald-500 text-slate-950 shadow-md'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Filter className="w-3.5 h-3.5" />
+            <span>সকল হোস্ট ({sellers.length})</span>
+          </button>
+        </div>
+      </div>
+
+      {/* AI Bot Quick Chat Row */}
+      <div className="p-3 bg-slate-900/40 border-b border-slate-800/60 flex items-center justify-between hover:bg-slate-900/80 transition cursor-pointer" onClick={onOpenSupportBot}>
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <div className="w-11 h-11 rounded-full bg-gradient-to-tr from-cyan-500 to-blue-600 p-0.5 flex items-center justify-center shadow">
+              <div className="w-full h-full rounded-full bg-slate-950 flex items-center justify-center text-cyan-400">
+                <Bot className="w-5 h-5" />
+              </div>
+            </div>
+            <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-400 border-2 border-slate-950 rounded-full animate-pulse"></span>
+          </div>
+          <div>
+            <div className="flex items-center gap-1.5">
+              <h4 className="font-bold text-xs sm:text-sm text-white">AI লাইভ অ্যাসিস্ট্যান্ট</h4>
+              <span className="text-[9px] bg-cyan-500/20 text-cyan-300 font-bold px-1.5 py-0.2 rounded">অফিশিয়াল</span>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-0.5">২৪/৭ ইনস্ট্যান্ট রিপ্লাই ও ডায়মন্ড হেল্পডেস্ক</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-cyan-500 hover:text-slate-950 text-slate-300 font-bold text-xs transition active:scale-95"
+        >
+          চ্যাট
+        </button>
+      </div>
+
+      {/* Sellers List Items (TikTok Inbox Style) */}
+      <div className="flex-1 overflow-y-auto divide-y divide-slate-800/60">
+        {filteredSellers.length === 0 ? (
+          <div className="text-center py-12 px-4 space-y-3">
+            <div className="w-12 h-12 rounded-full bg-slate-900 text-slate-500 mx-auto flex items-center justify-center">
+              <MessageCircle className="w-6 h-6" />
+            </div>
+            <p className="text-xs text-slate-400">
+              {filterMode === 'purchased'
+                ? 'আপনার এখনও কোনো সেলারের কাছ থেকে সময় বা সার্ভিস কেনা হয়নি।'
+                : 'কোনো সেলার পাওয়া যায়নি।'}
+            </p>
+            {filterMode === 'purchased' && (
+              <button
+                type="button"
+                onClick={() => setFilterMode('all')}
+                className="text-xs font-bold text-cyan-400 hover:underline inline-block cursor-pointer"
+              >
+                সকল ভেরিফায়েড সেলার দেখুন →
+              </button>
+            )}
+          </div>
+        ) : (
+          filteredSellers.map((seller) => {
+            const isSelected = activeSellerId === seller.id;
+            const avatarUrl =
+              seller.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${seller.avatarSeed || seller.name}`;
+
+            return (
+              <div
+                key={seller.id}
+                onClick={() => {
+                  sounds.playClick();
+                  onSelectSeller(seller);
+                }}
+                className={`p-3.5 sm:p-4 flex items-center justify-between transition-all cursor-pointer select-none ${
+                  isSelected
+                    ? 'bg-gradient-to-r from-cyan-950/50 to-blue-950/40 border-l-4 border-l-cyan-400'
+                    : 'hover:bg-slate-900/60 active:bg-slate-900'
+                }`}
+              >
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  {/* TikTok style circular avatar with online ring */}
+                  <div className="relative shrink-0">
+                    <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-cyan-500 via-indigo-500 to-pink-500 p-0.5 shadow-md">
+                      <img
+                        src={avatarUrl}
+                        alt={seller.name}
+                        className="w-full h-full rounded-full bg-slate-950 object-cover"
+                      />
+                    </div>
+                    {seller.online ? (
+                      <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-emerald-400 border-2 border-slate-950 rounded-full" title="অনলাইন"></span>
+                    ) : (
+                      <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-slate-600 border-2 border-slate-950 rounded-full" title="অফলাইন"></span>
+                    )}
+                  </div>
+
+                  {/* Seller info (Privacy Filter Applied) */}
+                  <div className="min-w-0 flex-1 pr-2">
+                    <div className="flex items-center gap-1.5">
+                      <h4 className="font-bold text-xs sm:text-sm text-slate-100 truncate">
+                        {seller.name}
+                      </h4>
+                      <CheckCircle className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                    </div>
+
+                    <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-400 truncate">
+                      <span className="text-cyan-300 font-semibold flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        <span>সময় কেনা হয়েছে: {getPurchasedTimeDisplay(seller)}</span>
+                      </span>
+                    </div>
+
+                    <p className="text-[10px] text-slate-500 truncate mt-0.5">
+                      {seller.service}
+                    </p>
+
+                    {/* Sensitive Data: Only shown to Admin, hidden from regular users */}
+                    {isAdmin && seller.phone && (
+                      <div className="mt-1 flex items-center gap-1 text-[10px] text-emerald-400 font-mono font-semibold bg-emerald-950/40 px-1.5 py-0.2 rounded w-fit">
+                        <Phone className="w-3 h-3" />
+                        <span>ফোন: {seller.phone} (অ্যাডমিন ভিউ)</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right Action Button (TikTok style) */}
+                <div className="shrink-0 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      sounds.playClick();
+                      onSelectSeller(seller);
+                    }}
+                    className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-lime-400 to-emerald-500 hover:from-lime-300 hover:to-emerald-400 text-slate-950 font-black text-xs shadow-md shadow-emerald-500/20 transition active:scale-95 cursor-pointer"
+                  >
+                    চ্যাট
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+};

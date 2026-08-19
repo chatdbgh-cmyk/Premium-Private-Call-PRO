@@ -1,0 +1,851 @@
+import React, { useState } from 'react';
+import {
+  Search,
+  Gem,
+  Star,
+  MessageSquare,
+  Mic,
+  PhoneCall,
+  Clock,
+  CheckCircle2,
+  ChevronRight,
+  Sparkles,
+  AlertTriangle,
+  Radio,
+  Crown,
+  ShieldCheck,
+  Plus,
+  Check,
+  Sliders,
+  Settings,
+  Tag,
+  Zap
+} from 'lucide-react';
+import { Developer, SiteConfig, PaymentSettings, UserAccount } from '../types';
+import { sounds } from '../utils/sound';
+
+interface HomeViewProps {
+  developers: Developer[];
+  allUsers?: UserAccount[];
+  onStartChatWithDev: (developer: Developer) => void;
+  onHireDeveloper: (developer: Developer) => void;
+  onOpenRecharge: () => void;
+  siteConfig?: SiteConfig;
+  paymentSettings?: PaymentSettings;
+  userDiamonds?: number;
+  onBookSlot?: (developerId: number, slotNumber: number) => void;
+  onUpdateHostSettings?: (developerId: number, isTimeSaleActive: boolean, maxAvailableHours: number) => void;
+  isOwner?: boolean;
+  isSeller?: boolean;
+}
+
+export const HomeView: React.FC<HomeViewProps> = ({
+  developers,
+  allUsers = [],
+  onStartChatWithDev,
+  onHireDeveloper,
+  onOpenRecharge,
+  siteConfig,
+  paymentSettings,
+  userDiamonds = 1500,
+  onBookSlot,
+  onUpdateHostSettings,
+  isOwner = false,
+  isSeller = false,
+}) => {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedFilter, setSelectedFilter] = useState<string>('all');
+  const [expandedDevId, setExpandedDevId] = useState<number | null>(null);
+  const [openSettingsDevId, setOpenSettingsDevId] = useState<number | null>(null);
+  const [lastBookedDevId, setLastBookedDevId] = useState<number | null>(null);
+  const [showSupportCallModal, setShowSupportCallModal] = useState(false);
+  const [bookingModalData, setBookingModalData] = useState<{
+    host: Developer;
+    slotNumber: number;
+    timeRange: string;
+  } | null>(null);
+
+  const supportPhoneNumber = paymentSettings?.supportPhone || paymentSettings?.bkashNumber || '01700000000';
+  const supportWhatsappNumber = paymentSettings?.supportWhatsapp || paymentSettings?.nagadNumber || supportPhoneNumber;
+
+  const filters = [
+    { id: 'all', label: '👑 সকল হোস্ট (Alex & David)' },
+    { id: 'voice', label: '🎙️ লাইভ ভয়েস কল' },
+    { id: 'chat', label: '💬 প্রাইভেট চ্যাট' },
+    { id: 'instant', label: '⚡ ইনস্ট্যান্ট কানেক্ট' },
+  ];
+
+  // Slot time range calculation helper
+  const getSlotTimeRange = (slotIndex: number): string => {
+    const startHour = 9 + slotIndex; // e.g. slot 1 -> 10:00
+    const endHour = startHour + 1;
+    const formatHour = (h: number) => {
+      const period = h >= 12 && h < 24 ? 'PM' : 'AM';
+      const displayH = h % 12 === 0 ? 12 : h % 12;
+      return `${displayH.toString().padStart(2, '0')}:00 ${period}`;
+    };
+    return `${formatHour(startHour)} - ${formatHour(endHour)}`;
+  };
+
+  const filteredHosts = developers.filter((host) => {
+    const matchesSearch =
+      host.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      host.service.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      host.skills.some((skill) => skill.toLowerCase().includes(searchQuery.toLowerCase()));
+
+    if (!matchesSearch) return false;
+    if (selectedFilter === 'voice') return host.skills.some((s) => s.includes('ভয়েস') || s.includes('কল'));
+    if (selectedFilter === 'chat') return host.skills.some((s) => s.includes('চ্যাট'));
+    if (selectedFilter === 'instant') return host.deliveryTime.includes('ইনস্ট্যান্ট');
+    return true;
+  });
+
+  const handleSlotClick = (host: Developer, slotIndex: number) => {
+    const booked = host.bookedHours || 0;
+    if (slotIndex <= booked) {
+      // Already booked
+      return;
+    }
+
+    sounds.playReceive();
+    setBookingModalData({
+      host,
+      slotNumber: slotIndex,
+      timeRange: getSlotTimeRange(slotIndex),
+    });
+  };
+
+  const handleConfirmBooking = () => {
+    if (!bookingModalData) return;
+    const { host, slotNumber } = bookingModalData;
+    const price = host.diamondPerHour || 100;
+
+    if (userDiamonds < price) {
+      sounds.playError();
+      alert('আপনার পর্যাপ্ত ডায়মন্ড নেই! অনুগ্রহ করে রিচার্জ করুন।');
+      setBookingModalData(null);
+      onOpenRecharge();
+      return;
+    }
+
+    if (onBookSlot) {
+      onBookSlot(host.id, slotNumber);
+      setLastBookedDevId(host.id);
+    }
+    setBookingModalData(null);
+  };
+
+  return (
+    <div className="space-y-4 pb-24 animate-fadeIn">
+      {/* Maintenance Alert Mode if active */}
+      {siteConfig?.maintenanceMode && (
+        <div className="bg-rose-950/80 border border-rose-500/50 rounded-2xl p-3.5 flex items-center gap-3 text-rose-200 shadow-lg animate-pulse">
+          <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
+          <div className="text-xs">
+            <span className="font-bold block text-rose-300">সিস্টেম রক্ষণাবেক্ষণ চলছে</span>
+            অ্যাডমিন প্যানেল সক্রিয় রয়েছে।
+          </div>
+        </div>
+      )}
+
+      {/* Marquee ticker if active */}
+      {siteConfig?.showMarquee && siteConfig.marqueeAlert && (
+        <div className="overflow-hidden bg-slate-900/90 border border-slate-800 rounded-xl py-1.5 px-3 flex items-center gap-2 shadow-inner">
+          <div className="flex items-center gap-1 text-[11px] font-bold text-lime-400 shrink-0 bg-lime-950/60 px-2 py-0.5 rounded border border-lime-500/30">
+            <Radio className="w-3 h-3 animate-ping" />
+            <span>PTS লাইভ</span>
+          </div>
+          <div className="overflow-x-auto whitespace-nowrap scrollbar-none text-xs text-slate-300 font-medium">
+            {siteConfig.marqueeAlert}
+          </div>
+        </div>
+      )}
+
+      {/* 📣 ৪. নোটিফিকেশন ও ডিসকাউন্ট অফার ব্যানার (ওয়েলকাম ও রিচার্জ বোনাস) */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-500/20 via-emerald-500/20 to-teal-500/20 border border-amber-500/40 p-3.5 shadow-xl flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0 text-amber-300 shadow-inner">
+            <Tag className="w-5 h-5 animate-bounce" />
+          </div>
+          <div>
+            <div className="flex items-center gap-1.5">
+              <span className="bg-amber-400 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">
+                স্পেশাল বোনাস
+              </span>
+              <span className="text-xs font-bold text-amber-300">
+                {siteConfig?.welcomeBonusDiamonds ? `নতুন একাউন্টে +${siteConfig.welcomeBonusDiamonds} 💎 ফ্রি!` : 'সীমিত সময়ের ধামাকা অফার!'}
+              </span>
+            </div>
+            <p className="text-xs font-bold text-white mt-0.5 leading-snug">
+              {siteConfig?.freeDiamondsOfferTitle || `প্রতিটি রিচার্জে +${siteConfig?.rechargeBonusPercentage || 20}% অতিরিক্ত ফ্রি ডায়মন্ড বোনাস!`}
+            </p>
+          </div>
+        </div>
+
+        <button
+          onClick={() => {
+            sounds.playClick();
+            onOpenRecharge();
+          }}
+          className="shrink-0 px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-300 hover:to-yellow-400 text-slate-950 text-xs font-black shadow-lg shadow-amber-500/20 transition active:scale-95 cursor-pointer flex items-center gap-1"
+        >
+          <Zap className="w-3.5 h-3.5 fill-slate-950" />
+          <span>রিচার্জ</span>
+        </button>
+      </div>
+
+      {/* PTS Voice & Chat Hero Banner */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-emerald-950/40 to-slate-900 border border-emerald-500/30 p-4 shadow-xl">
+        <div className="relative z-10 flex items-center justify-between">
+          <div className="min-w-0 pr-2">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-lime-400 mb-1">
+              <Crown className="w-3.5 h-3.5 shrink-0 text-lime-400" />
+              <span>{siteConfig?.siteTagline || 'প্রাইভেট লাইভ চ্যাট ও ভয়েস কলিং'}</span>
+            </div>
+            <h2 className="text-sm sm:text-base font-black text-slate-100 leading-tight">
+              {siteConfig?.showBannerNotice && siteConfig.bannerNotice ? (
+                <span className="text-lime-200">{siteConfig.bannerNotice}</span>
+              ) : (
+                'অ্যালেক্স ও ডেভিডের সাথে সরাসরি চ্যাট ও ভয়েস কল'
+              )}
+            </h2>
+            <p className="text-xs text-slate-400 mt-1 max-w-[280px]">
+              ডায়মন্ড দিয়ে সময় বুক করে সরাসরি ইন-অ্যাপ সুরক্ষিত প্রাইভেট ভয়েস পোর্টালে যুক্ত হয়ে কথা বলুন।
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              sounds.playClick();
+              onOpenRecharge();
+            }}
+            className="flex flex-col items-center justify-center p-3 rounded-xl bg-lime-500/10 hover:bg-lime-500/20 border border-lime-500/30 text-lime-300 transition shrink-0 group cursor-pointer"
+          >
+            <Gem className="w-6 h-6 text-lime-400 group-hover:scale-110 transition-transform mb-1 animate-bounce" />
+            <span className="text-[11px] font-bold">ডায়মন্ড রিচার্জ</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 💬 হোমপেজ ডায়নামিক সাপোর্ট ও ওনার নোটিশ বক্স (Editable Message from Admin Panel) */}
+      <div className="bg-gradient-to-r from-cyan-950/70 via-slate-900 to-indigo-950/70 border border-cyan-500/40 rounded-2xl p-3.5 shadow-xl flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3 flex-1 min-w-[260px]">
+          <div className="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-300 shrink-0 shadow-inner">
+            <MessageSquare className="w-5 h-5 animate-pulse text-cyan-300" />
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+              <span className="text-xs font-black text-cyan-300 uppercase tracking-wider">
+                {siteConfig?.siteTagline ? 'সার্বক্ষণিক সহায়তা ও নোটিশ' : '২৪/৭ লাইভ সাপোর্ট'}
+              </span>
+            </div>
+            <p className="text-xs text-slate-200 mt-1 font-medium leading-relaxed">
+              {siteConfig?.homeSupportNotice ||
+                'যেকোনো প্রয়োজনে বা তথ্যের জন্য আমাদের সার্বক্ষণিক লাইভ চ্যাট অথবা সাপোর্ট সেন্টারে যোগাযোগ করুন। তাৎক্ষণিক সেবা নিশ্চিত করা হয়।'}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              sounds.playClick();
+              setShowSupportCallModal(true);
+            }}
+            className="px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 font-black text-xs shadow-lg shadow-cyan-500/20 transition active:scale-95 flex items-center gap-1.5 cursor-pointer"
+          >
+            <MessageSquare className="w-3.5 h-3.5" />
+            <span>লাইভ চ্যাট হেল্প</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Search Bar */}
+      <div className="relative">
+        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="হোস্ট খুঁজুন (যেমন: Alex, David, ভয়েস, চ্যাট)..."
+          className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-10 pr-4 py-3 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-lime-500 shadow-inner transition"
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-200"
+          >
+            ক্লিয়ার
+          </button>
+        )}
+      </div>
+
+      {/* Filter Pills */}
+      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none no-scrollbar text-xs">
+        {filters.map((fil) => (
+          <button
+            key={fil.id}
+            onClick={() => {
+              sounds.playClick();
+              setSelectedFilter(fil.id);
+            }}
+            className={`whitespace-nowrap px-3 py-1.5 rounded-xl border transition-all text-xs font-medium shrink-0 cursor-pointer ${
+              selectedFilter === fil.id
+                ? 'bg-lime-500/20 border-lime-500/60 text-lime-300 font-semibold shadow-sm shadow-lime-500/20'
+                : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+            }`}
+          >
+            {fil.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Host Cards (Alex and David) */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between text-xs text-slate-400 px-1">
+          <span>সক্রিয় চ্যাট ও ভয়েস হোস্ট: {filteredHosts.length} জন</span>
+          <span className="flex items-center gap-1 text-lime-400 font-bold">
+            <span className="w-2 h-2 rounded-full bg-lime-400 animate-ping"></span>
+            ২৪/৭ লাইভ কানেকশন প্রস্তুত
+          </span>
+        </div>
+
+        {filteredHosts.length === 0 ? (
+          <div className="p-8 text-center bg-slate-900/60 border border-slate-800 rounded-2xl">
+            <Mic className="w-10 h-10 text-slate-600 mx-auto mb-2" />
+            <p className="text-sm font-semibold text-slate-300">কোনো হোস্ট পাওয়া যায়নি!</p>
+            <button
+              onClick={() => {
+                setSearchQuery('');
+                setSelectedFilter('all');
+              }}
+              className="mt-3 text-xs text-lime-400 hover:underline"
+            >
+              সকল হোস্ট দেখুন
+            </button>
+          </div>
+        ) : (
+          filteredHosts.map((host) => {
+            const isExpanded = expandedDevId === host.id;
+            const isSettingsOpen = openSettingsDevId === host.id;
+            const maxHours = host.maxAvailableHours || 10;
+            const bookedHours = host.bookedHours || 0;
+            const isTimeSaleActive = host.isTimeSaleActive !== false;
+            const pricePerHour = host.diamondPerHour || 100;
+
+            return (
+              <div
+                key={host.id}
+                className="group bg-slate-900/95 border border-slate-800 hover:border-lime-500/40 rounded-2xl p-4 transition-all duration-200 shadow-xl space-y-3.5"
+              >
+                {/* Header Row */}
+                <div className="flex items-start gap-3.5">
+                  <div className="relative">
+                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-lime-500 to-emerald-600 p-0.5 shadow-md shrink-0">
+                      <img
+                        src={host.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${host.avatarSeed}`}
+                        alt={host.name}
+                        className="w-full h-full rounded-[14px] bg-slate-900 object-cover"
+                      />
+                    </div>
+                    {host.online ? (
+                      <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-lime-400 border-2 border-slate-900 rounded-full" title="অনলাইন" />
+                    ) : (
+                      <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-slate-500 border-2 border-slate-900 rounded-full" title="অফলাইন" />
+                    )}
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-1">
+                      <div className="flex items-center gap-1.5">
+                        <h3 className="font-extrabold text-slate-100 text-sm sm:text-base leading-snug">
+                          {host.name}
+                        </h3>
+                        <CheckCircle2 className="w-3.5 h-3.5 text-lime-400 shrink-0" />
+                        <span className="text-[9px] bg-lime-500/20 text-lime-300 font-bold px-1.5 py-0.2 rounded">
+                          HOST
+                        </span>
+                      </div>
+
+                      {/* Diamond Price */}
+                      <div className="flex items-center gap-1 text-lime-300 font-extrabold text-xs sm:text-sm shrink-0 bg-lime-950/60 border border-lime-500/30 px-2 py-0.5 rounded-lg">
+                        <Gem className="w-3.5 h-3.5 text-lime-400" />
+                        <span>{pricePerHour}</span>
+                        <span className="text-[10px] text-lime-400/80 font-normal">💎/ঘণ্টা</span>
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-slate-300 font-medium mt-1 leading-normal">
+                      {host.service}
+                    </p>
+
+                    <div className="flex items-center gap-2 mt-1.5 text-[11px] text-slate-400">
+                      <span className="inline-block text-[10px] px-2 py-0.5 rounded-md bg-emerald-950/80 text-emerald-300 font-bold border border-emerald-800/60">
+                        {isTimeSaleActive ? 'সেশন অ্যাক্টিভ' : 'সেশন বন্ধ'}
+                      </span>
+                      <span>•</span>
+                      <span className="text-lime-300 font-mono font-semibold">
+                        {maxHours - bookedHours > 0 ? `${maxHours - bookedHours} ঘণ্টা এভেলেবল` : 'বুকিং পূর্ণ'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Skills / Badges */}
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {host.skills.map((skill, idx) => (
+                    <span
+                      key={idx}
+                      className="px-2.5 py-0.5 rounded-lg bg-slate-950 text-lime-300 text-[10px] font-semibold border border-lime-500/20"
+                    >
+                      {skill}
+                    </span>
+                  ))}
+                </div>
+
+                {/* Seller Settings Option Toggle & Panel (Only for Owner or Seller) */}
+                {(isOwner || isSeller) && (
+                  <div className="bg-slate-950/80 rounded-xl border border-slate-800/80 overflow-hidden text-xs">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        sounds.playClick();
+                        setOpenSettingsDevId(isSettingsOpen ? null : host.id);
+                      }}
+                      className="w-full flex items-center justify-between p-2.5 text-slate-400 hover:text-slate-200 transition bg-slate-900/40 cursor-pointer"
+                    >
+                      <span className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-300">
+                        <Sliders className="w-3.5 h-3.5 text-lime-400" />
+                        <span>হোস্ট টাইম স্লট বুকিং কন্ট্রোল ({bookedHours}/{maxHours} ঘণ্টা বুকড)</span>
+                      </span>
+                      <span className="text-[10px] text-lime-400 font-bold">
+                        {isSettingsOpen ? 'লুকান' : 'সেটিংস'}
+                      </span>
+                    </button>
+
+                    {isSettingsOpen && (
+                      <div className="p-3 border-t border-slate-800/80 space-y-3 bg-slate-950/90 animate-fadeIn">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] text-slate-300">সময় বিক্রি সক্রিয় রাখুন:</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              sounds.playClick();
+                              if (onUpdateHostSettings) {
+                                onUpdateHostSettings(host.id, !isTimeSaleActive, maxHours);
+                              }
+                            }}
+                            className={`px-3 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                              isTimeSaleActive
+                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                : 'bg-slate-800 text-slate-400 border border-slate-700'
+                            }`}
+                          >
+                            {isTimeSaleActive ? '🟢 চালু (Active)' : '⚪ বন্ধ (Inactive)'}
+                          </button>
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-[11px] text-slate-300">
+                            <span>সর্বোচ্চ বরাদ্দকৃত সময়:</span>
+                            <span className="font-mono text-lime-400 font-bold">{maxHours} ঘণ্টা</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="1"
+                            max="24"
+                            value={maxHours}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value);
+                              if (onUpdateHostSettings) {
+                                onUpdateHostSettings(host.id, isTimeSaleActive, val);
+                              }
+                            }}
+                            className="w-full accent-lime-400 bg-slate-800 h-1.5 rounded-lg cursor-pointer"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 10 Hourly Interactive Booking Slots */}
+                <div className="space-y-2 pt-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-slate-200 flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-lime-400" />
+                      <span>ঘণ্টা অনুযায়ী স্লট বুকিং (প্রতি ঘণ্টা {pricePerHour} 💎)</span>
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-mono">
+                      বুকড: <strong className="text-lime-400">{bookedHours}</strong> / {maxHours}
+                    </span>
+                  </div>
+
+                  {!isTimeSaleActive ? (
+                    <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-center text-xs text-slate-400">
+                      🔒 হোস্ট বর্তমানে নতুন বুকিং নিচ্ছেন না।
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                      {Array.from({ length: Math.min(maxHours, 10) }).map((_, index) => {
+                        const slotNum = index + 1;
+                        const isBooked = slotNum <= bookedHours;
+                        const isNextAvailable = slotNum === bookedHours + 1;
+                        const slotTimeRange = getSlotTimeRange(slotNum);
+                        const bookedInfo = host.bookedSlots?.find((s) => s.slotNumber === slotNum);
+                        const matchedUser = bookedInfo?.userId
+                          ? allUsers.find((u) => u.id === bookedInfo.userId)
+                          : bookedInfo?.userName
+                          ? allUsers.find((u) => u.name.toLowerCase() === bookedInfo.userName.toLowerCase())
+                          : null;
+                        const displayUserAvatar = matchedUser?.avatar || bookedInfo?.userAvatar || `https://api.dicebear.com/7.x/adventurer/svg?seed=Booked${slotNum}`;
+                        const displayUserName = matchedUser?.name || bookedInfo?.userName || 'গ্রাহক বুকড';
+
+                        return (
+                          <button
+                            key={index}
+                            type="button"
+                            disabled={isBooked}
+                            onClick={() => {
+                              sounds.playClick();
+                              handleSlotClick(host, slotNum);
+                            }}
+                            className={`p-2.5 rounded-2xl border text-center flex flex-col items-center justify-between transition-all min-h-[72px] relative overflow-hidden ${
+                              isBooked
+                                ? 'bg-slate-950/90 border-emerald-500/40 text-slate-300 shadow-inner'
+                                : isNextAvailable
+                                ? 'bg-gradient-to-b from-lime-500/20 to-emerald-950/60 border-lime-400 text-lime-300 hover:scale-102 shadow-md shadow-lime-500/20 font-bold cursor-pointer animate-pulse'
+                                : 'bg-slate-950/70 border-slate-800/80 text-slate-400 hover:border-slate-700 cursor-pointer'
+                            }`}
+                          >
+                            {isBooked ? (
+                              <div className="w-full flex flex-col items-center justify-center gap-1">
+                                <div className="flex items-center gap-1">
+                                  <img
+                                    src={displayUserAvatar}
+                                    alt="Booked user"
+                                    className="w-5 h-5 rounded-full object-cover border border-emerald-400 shrink-0 bg-slate-800"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                  <span className="text-[10px] font-bold text-slate-100 truncate max-w-[60px]">
+                                    {displayUserName}
+                                  </span>
+                                  <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+                                </div>
+                                <span className="text-[9px] font-mono text-emerald-300 bg-emerald-950/80 px-1.5 py-0.5 rounded border border-emerald-500/30 whitespace-nowrap">
+                                  {bookedInfo?.timeRange || slotTimeRange}
+                                </span>
+                              </div>
+                            ) : isNextAvailable ? (
+                              <div className="w-full flex flex-col items-center justify-center gap-1">
+                                <div className="flex items-center gap-1 text-lime-300">
+                                  <Plus className="w-4 h-4 text-lime-400 shrink-0" />
+                                  <span className="text-[10px] font-black">১ ঘণ্টা বুকিং</span>
+                                </div>
+                                <span className="text-[9px] font-mono text-lime-300 bg-lime-950/80 px-1.5 py-0.5 rounded border border-lime-500/40 whitespace-nowrap">
+                                  {slotTimeRange}
+                                </span>
+                                <span className="text-[8px] text-lime-400/90 font-bold">
+                                  {pricePerHour} 💎
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="w-full flex flex-col items-center justify-center gap-1 opacity-70">
+                                <span className="text-[10px] font-bold text-slate-400">
+                                  স্লট #{slotNum}
+                                </span>
+                                <span className="text-[9px] font-mono text-slate-500 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800 whitespace-nowrap">
+                                  {slotTimeRange}
+                                </span>
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Active Bookings Detailed Schedule List */}
+                  {host.bookedSlots && host.bookedSlots.length > 0 && (
+                    <div className="mt-2.5 p-3 rounded-2xl bg-slate-950/90 border border-slate-800/90 space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-slate-300 flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>বর্তমান বুকিং শিডিউল ও ক্লায়েন্ট তালিকা</span>
+                        </span>
+                        <span className="text-[10px] text-emerald-400 font-mono font-bold">
+                          {host.bookedSlots.length} টি সেশন নিশ্চিত
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {host.bookedSlots.map((slot, sIdx) => {
+                          const matchedUser = slot.userId
+                            ? allUsers.find((u) => u.id === slot.userId)
+                            : slot.userName
+                            ? allUsers.find((u) => u.name.toLowerCase() === slot.userName.toLowerCase())
+                            : null;
+                          const userAvatar = matchedUser?.avatar || slot.userAvatar || `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(slot.userName)}`;
+                          const userName = matchedUser?.name || slot.userName || 'গ্রাহক';
+
+                          return (
+                            <div
+                              key={sIdx}
+                              className="p-2 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between gap-2"
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <img
+                                  src={userAvatar}
+                                  alt={userName}
+                                  className="w-7 h-7 rounded-full object-cover border border-emerald-400 shrink-0 bg-slate-800"
+                                  referrerPolicy="no-referrer"
+                                />
+                                <div className="min-w-0">
+                                  <p className="text-xs font-bold text-slate-100 truncate">
+                                    {userName}
+                                  </p>
+                                  <p className="text-[10px] font-mono text-emerald-400">
+                                    {slot.timeRange}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="text-right shrink-0">
+                                <span className="inline-block px-2 py-0.5 rounded-md bg-emerald-950 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold">
+                                  স্লট #{slot.slotNumber} (১ ঘণ্টা)
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Booking complete banner */}
+                  {bookedHours >= maxHours && isTimeSaleActive && (
+                    <div className="text-[11px] text-amber-300 bg-amber-950/40 border border-amber-500/30 rounded-xl p-2 text-center font-medium">
+                      ⚠️ সর্বোচ্চ সময় বুকিং সম্পন্ন হয়েছে! আর কোনো স্লট খালি নেই।
+                    </div>
+                  )}
+
+                  {/* Booking success in-app chat button */}
+                  {bookedHours > 0 && (
+                    <div className="bg-gradient-to-r from-teal-950 via-slate-900 to-emerald-950 p-3 rounded-xl border border-lime-500/40 text-center space-y-2 animate-fadeIn shadow-lg">
+                      <p className="text-xs font-bold text-lime-300 flex items-center justify-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4 text-lime-400" />
+                        <span>আপনার বুকিং সফল হয়েছে ({bookedHours} ঘণ্টা)!</span>
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          sounds.playClick();
+                          onStartChatWithDev(host);
+                        }}
+                        className="inline-flex items-center gap-1.5 bg-gradient-to-r from-lime-400 via-emerald-400 to-green-500 hover:from-lime-300 text-slate-950 font-black text-xs py-2 px-4 rounded-xl shadow-md shadow-emerald-500/20 active:scale-95 transition cursor-pointer"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        <span>প্রাইভেট ইন-অ্যাপ চ্যাটরুমে যুক্ত হন</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Bio dropdown */}
+                {isExpanded && (
+                  <div className="pt-2 border-t border-slate-800/80 text-xs space-y-2 animate-fadeIn">
+                    <p className="text-slate-300 leading-relaxed bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
+                      {host.bio}
+                    </p>
+                    <div className="flex items-center justify-between text-[11px] text-slate-400 bg-slate-800/40 p-2 rounded-lg">
+                      <span className="flex items-center gap-1">
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                        ১০০% প্রাইভেট এনক্রিপ্টেড সংযোগ
+                      </span>
+                      <span className="text-lime-300 font-mono">
+                        সময় বরাদ্দ: {host.purchasedTime || 30} মিনিট
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Action Buttons Footer */}
+                <div className="pt-2 border-t border-slate-800/60 flex flex-wrap items-center justify-between gap-2">
+                  <button
+                    onClick={() => {
+                      sounds.playClick();
+                      setExpandedDevId(isExpanded ? null : host.id);
+                    }}
+                    className="text-xs text-slate-400 hover:text-lime-300 transition flex items-center gap-0.5 px-2 py-1.5 cursor-pointer"
+                  >
+                    <span>{isExpanded ? 'সংক্ষিপ্ত করুন' : 'বিস্তারিত প্রোফাইল'}</span>
+                    <ChevronRight className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                  </button>
+
+                  <div className="flex items-center gap-2">
+                    {/* Chat Button */}
+                    <button
+                      onClick={() => {
+                        sounds.playClick();
+                        onStartChatWithDev(host);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition active:scale-95 cursor-pointer"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5 text-lime-400" />
+                      <span>প্রাইভেট চ্যাট ও কল</span>
+                    </button>
+
+                    {/* Book Session Button */}
+                    <button
+                      onClick={() => {
+                        sounds.playClick();
+                        onHireDeveloper(host);
+                      }}
+                      className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-lime-400 via-emerald-400 to-green-500 hover:from-lime-300 hover:to-emerald-400 text-slate-950 text-xs font-extrabold flex items-center gap-1.5 shadow-md shadow-emerald-500/20 transition active:scale-95 cursor-pointer"
+                    >
+                      <Gem className="w-3.5 h-3.5" />
+                      <span>সেশন বুকিং</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* 🛎️ SLOT BOOKING CONFIRMATION & DIAMOND DEDUCTION POPUP MODAL */}
+      {bookingModalData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+          <div className="bg-slate-900 border border-lime-500/50 rounded-3xl p-5 max-w-sm w-full space-y-4 shadow-2xl shadow-lime-500/20 relative animate-scaleUp">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-lime-500/20 border border-lime-500/40 flex items-center justify-center text-lime-400">
+                  <Clock className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-white">স্লট বুকিং কনফার্মেশন</h4>
+                  <p className="text-[10px] text-slate-400">হোস্ট টাইম স্লট রিজার্ভেশন</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  sounds.playClick();
+                  setBookingModalData(null);
+                }}
+                className="w-7 h-7 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-xs font-bold transition cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Host Details */}
+            <div className="p-3 bg-slate-950 rounded-2xl border border-slate-800 flex items-center gap-3">
+              <img
+                src={bookingModalData.host.avatar}
+                alt={bookingModalData.host.name}
+                className="w-12 h-12 rounded-2xl object-cover border-2 border-lime-400/50 shadow-md shrink-0 bg-slate-800"
+                referrerPolicy="no-referrer"
+              />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-1">
+                  <h5 className="text-xs font-black text-lime-300 truncate">{bookingModalData.host.name}</h5>
+                  <span className="text-[9px] bg-emerald-950 text-emerald-300 font-bold px-1.5 py-0.5 rounded border border-emerald-500/30 shrink-0">
+                    অনলাইন
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-300 truncate">{bookingModalData.host.service}</p>
+                <p className="text-[10px] font-mono text-lime-400 font-bold mt-0.5">
+                  প্রতি ঘণ্টা {bookingModalData.host.diamondPerHour || 100} 💎
+                </p>
+              </div>
+            </div>
+
+            {/* Booking Details Specs */}
+            <div className="space-y-2 bg-slate-950/60 p-3 rounded-2xl border border-slate-800 text-xs">
+              <div className="flex items-center justify-between text-slate-300">
+                <span>নির্বাচিত স্লট:</span>
+                <span className="font-bold text-white bg-slate-800 px-2 py-0.5 rounded-lg border border-slate-700">
+                  স্লট #{bookingModalData.slotNumber} (১ ঘণ্টা)
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-slate-300">
+                <span>⏰ নির্ধারিত সময়সীমা:</span>
+                <span className="font-mono font-bold text-lime-300 bg-lime-950/80 px-2 py-0.5 rounded-lg border border-lime-500/30">
+                  {bookingModalData.timeRange}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-slate-300 pt-1 border-t border-slate-800">
+                <span>প্রয়োজনীয় ডায়মন্ড:</span>
+                <span className="font-mono font-black text-amber-400 flex items-center gap-1">
+                  <Gem className="w-3.5 h-3.5 fill-amber-400" />
+                  {bookingModalData.host.diamondPerHour || 100} 💎
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-slate-400 text-[11px]">
+                <span>আপনার ওয়ালেট ব্যালেন্স:</span>
+                <span className="font-mono font-bold text-slate-200">
+                  {userDiamonds} 💎
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-slate-400 text-[11px]">
+                <span>বুকিং পরবর্তী ব্যালেন্স:</span>
+                <span className={`font-mono font-bold ${userDiamonds >= (bookingModalData.host.diamondPerHour || 100) ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {userDiamonds - (bookingModalData.host.diamondPerHour || 100)} 💎
+                </span>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            {userDiamonds < (bookingModalData.host.diamondPerHour || 100) ? (
+              <div className="space-y-2">
+                <div className="p-2.5 rounded-xl bg-rose-950/60 border border-rose-500/40 text-center text-xs text-rose-300 font-medium">
+                  ⚠️ আপনার একাউন্টে পর্যাপ্ত ডায়মন্ড নেই! রিচার্জ করুন।
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    sounds.playClick();
+                    setBookingModalData(null);
+                    onOpenRecharge();
+                  }}
+                  className="w-full py-3 rounded-2xl bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-300 text-slate-950 font-black text-xs shadow-lg shadow-amber-500/20 transition active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <Gem className="w-4 h-4 fill-slate-950" />
+                  <span>এখনই ডায়মন্ড রিচার্জ করুন</span>
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    sounds.playClick();
+                    setBookingModalData(null);
+                  }}
+                  className="w-1/3 py-2.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition cursor-pointer"
+                >
+                  বাতিল
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    sounds.playSuccess();
+                    handleConfirmBooking();
+                  }}
+                  className="w-2/3 py-2.5 rounded-2xl bg-gradient-to-r from-lime-400 via-emerald-400 to-green-500 hover:from-lime-300 text-slate-950 font-black text-xs shadow-lg shadow-emerald-500/30 transition active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>✅ বুকিং নিশ্চিত করুন</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

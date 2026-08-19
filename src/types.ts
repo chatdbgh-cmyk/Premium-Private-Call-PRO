@@ -1,0 +1,214 @@
+export type ViewType = 'home' | 'chat' | 'orders' | 'profile' | 'admin' | 'seller_portal';
+
+export type PaymentMethod = 'bKash' | 'Nagad' | 'Rocket' | 'Upay';
+
+export interface UserSession {
+  name: string;
+  phone: string;
+  sessionId: string;
+  userId?: string;
+  loginAt?: string;
+  role?: 'owner' | 'seller' | 'customer' | 'user' | 'vip' | 'admin';
+  isOwner?: boolean;
+  isSeller?: boolean;
+  sellerId?: number;
+  avatar?: string;
+}
+
+export interface BookedSlotInfo {
+  slotNumber: number;
+  userId: string;
+  userName: string;
+  userAvatar?: string;
+  timeRange: string;
+  bookedAt: string;
+  diamonds: number;
+}
+
+export interface Developer {
+  id: number;
+  name: string;
+  username?: string;
+  password?: string;
+  service: string;
+  category: 'app' | 'web' | 'graphics' | 'bot' | 'security' | 'marketing';
+  price: number; // in Diamonds
+  rating: number;
+  completedOrders: number;
+  avatarSeed?: string;
+  avatar?: string;
+  bio: string;
+  skills: string[];
+  online: boolean;
+  deliveryTime: string;
+  purchasedTime?: number; // minutes or purchased units
+  phone?: string; // sensitive - only visible to admin
+  telegram?: string;
+  externalChatUrl?: string;
+  isTimeSaleActive?: boolean;
+  maxAvailableHours?: number;
+  bookedHours?: number;
+  diamondPerHour?: number;
+  totalEarningsDiamonds?: number;
+  bookedSlots?: BookedSlotInfo[];
+}
+
+export interface ChatMessage {
+  id: string;
+  sender: 'user' | 'bot' | 'developer' | 'admin';
+  senderName?: string;
+  text: string;
+  timestamp: string;
+  developerId?: number;
+  isOrderCard?: boolean;
+  orderInfo?: {
+    orderId: string;
+    serviceName: string;
+    diamonds: number;
+  };
+  attachment?: {
+    type: 'image' | 'voice' | 'file';
+    url: string;
+    name?: string;
+    duration?: number; // duration in seconds for voice note
+  };
+  isRead?: boolean;
+  status?: 'sending' | 'sent' | 'delivered' | 'read';
+}
+
+export interface RechargePackage {
+  id: string;
+  diamonds: number;
+  bonus: number;
+  bdtPrice: number;
+  popular?: boolean;
+  badge?: string;
+}
+
+export interface PaymentRequest {
+  id: string;
+  userId: string;
+  userName: string;
+  method: PaymentMethod;
+  amountDiamonds: number;
+  bdtAmount: number;
+  senderPhone: string;
+  lastDigits?: string;
+  trxId: string;
+  date: string;
+  status: 'pending' | 'approved' | 'rejected';
+  note?: string;
+}
+
+export interface ServiceOrder {
+  id: string;
+  userId?: string;
+  userName?: string;
+  userPhone?: string;
+  userAvatar?: string;
+  developerId: number;
+  developerName: string;
+  serviceName: string;
+  developerService?: string;
+  priceDiamonds: number;
+  durationMinutes?: number;
+  durationText?: string;
+  date: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
+  requirements?: string;
+  completionDate?: string;
+  adminNote?: string;
+}
+
+export interface PaymentSettings {
+  bkashNumber: string;
+  nagadNumber: string;
+  rocketNumber: string;
+  upayNumber: string;
+  telegramSupportUrl: string;
+  ratePerDiamondBdt: number;
+  supportPhone?: string;
+  supportWhatsapp?: string;
+}
+
+export interface MarketingBanner {
+  id: string;
+  image: string;
+  title?: string;
+  subtitle?: string;
+  buttonText?: string;
+  link?: string;
+  active: boolean;
+}
+
+export interface SiteConfig {
+  siteName: string;
+  siteTagline: string;
+  bannerNotice: string;
+  showBannerNotice: boolean;
+  marqueeAlert: string;
+  showMarquee: boolean;
+  maintenanceMode: boolean;
+  adminPin: string;
+  telegramChannel: string;
+  minRechargeAmount: number;
+  supportStatus: 'active' | 'offline' | 'busy';
+  // Homepage Dynamic Support & Notice Box
+  homeSupportNotice?: string;
+  showHomeSupportNotice?: boolean;
+  // Welcome / Entrance Popup Promo Banners (Supports Unlimited Multiple Banners)
+  popupBanners?: MarketingBanner[];
+  popupBannerImage?: string;
+  showPopupBanner?: boolean;
+  popupBannerTitle?: string;
+  popupBannerSubtitle?: string;
+  popupBannerLink?: string;
+  popupBannerButtonText?: string;
+  // Free Diamonds & Bonus Offers Config
+  welcomeBonusDiamonds?: number;
+  rechargeBonusPercentage?: number;
+  rechargeFlatBonusDiamonds?: number;
+  freeDiamondsOfferEnabled?: boolean;
+  freeDiamondsOfferTitle?: string;
+}
+
+export interface UserAccount {
+  id: string;
+  name: string;
+  username?: string;
+  bio?: string;
+  phone: string;
+  password?: string;
+  diamonds: number;
+  isBanned: boolean;
+  joinedDate: string;
+  role: 'user' | 'vip' | 'admin' | 'owner' | 'seller';
+  sellerId?: number;
+  avatar?: string;
+}
+
+export interface SellerWithdrawRequest {
+  id: string;
+  sellerId: number;
+  sellerName: string;
+  sellerAvatar?: string;
+  sellerPhone?: string;
+  amountDiamonds: number;
+  bdtAmount: number;
+  paymentMethod: 'bKash' | 'Nagad' | 'Rocket' | 'Upay' | 'Bank';
+  accountNumber: string;
+  accountType?: 'Personal' | 'Agent';
+  note?: string;
+  requestedAt: string;
+  status: 'pending' | 'approved' | 'rejected';
+  adminTrxId?: string;
+  adminNote?: string;
+  processedAt?: string;
+}
+
+export interface BotAutoReply {
+  id: string;
+  trigger: string;
+  response: string;
+  enabled: boolean;
+}
