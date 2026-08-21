@@ -20,6 +20,11 @@ const distPath = fs.existsSync(path.join(process.cwd(), 'dist'))
 // Serve static assets from Vite build
 app.use(express.static(distPath));
 
+// Google verification route fallback
+app.get('/google4gmsDcVY_a-tfv6_5HvlUdAwPiTKW8Gke7oayOnm1mY.html', (req, res) => {
+  res.type('text/html').send('google-site-verification: google4gmsDcVY_a-tfv6_5HvlUdAwPiTKW8Gke7oayOnm1mY.html');
+});
+
 // SPA catch-all fallback to index.html
 app.get('*', (req, res) => {
   const indexPath = path.join(distPath, 'index.html');
