@@ -14,6 +14,8 @@ import {
   BotAutoReply,
   UserSession,
   BookedSlotInfo,
+  DailyTimeSlot,
+  DayAvailabilitySchedule,
   RechargePackage,
 } from './types';
 import {
@@ -37,6 +39,7 @@ import { LoginVerification } from './components/LoginVerification';
 import { SellerPortal } from './components/SellerPortal';
 import { EntrancePopupBanner } from './components/EntrancePopupBanner';
 import { IncomingCallModal } from './components/IncomingCallModal';
+import { Crown, Sparkles } from 'lucide-react';
 import { ToastContainer, ToastMessage } from './components/Toast';
 import { sounds } from './utils/sound';
 import { realtimeBus } from './utils/realtime';
@@ -86,7 +89,7 @@ export default function App() {
     return saved || 'USR-CUSTOMER';
   });
 
-  // User session state
+  // User session state (Null by default if not authenticated in localStorage)
   const [userSession, setUserSession] = useState<UserSession | null>(() => {
     const saved = localStorage.getItem('user_session');
     if (saved) {
@@ -94,15 +97,7 @@ export default function App() {
         return JSON.parse(saved);
       } catch {}
     }
-    return {
-      name: 'রাকিবুল হাসান (কাস্টমার)',
-      phone: '01712-345678',
-      sessionId: 'CUST-DEFAULT-101',
-      userId: 'USR-CUSTOMER',
-      role: 'customer',
-      avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=CustomerRakib',
-      loginAt: 'সক্রিয়',
-    };
+    return null;
   });
 
   // Active User object synced with userSession
@@ -552,6 +547,18 @@ export default function App() {
 
     setPaymentRequests((prev) => [newReq, ...prev]);
     showToast(`পেমেন্ট রিকোয়েস্ট পাঠানো হয়েছে (${activeUser.name})! অ্যাডমিন দ্রুত ভেরিফাই করবেন।`, 'success');
+    sounds.playDiamond();
+
+    // Send confirmation system message in Chat Inbox
+    const rechargeSubmitMsg: ChatMessage = {
+      id: `PAY-SUB-${Date.now()}`,
+      sender: 'bot',
+      text: `💳 [রিচার্জ রিকোয়েস্ট সাবমিট]: ${activeUser.name} (${data.senderPhone}) কর্তৃক ৳${data.bdtAmount} টাকার (${data.diamonds} 💎) রিচার্জের আবেদন জমা পড়েছে। TrxID: ${data.trxId}। ওনার ভেরিফাই করলেই ওয়ালেটে ডায়মন্ড যুক্ত হবে।`,
+      timestamp: new Date().toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' }),
+    };
+    setChatMessages((prev) => [...prev, rechargeSubmitMsg]);
+    realtimeBus.broadcast('NEW_MESSAGE', rechargeSubmitMsg);
+    realtimeBus.broadcast('PAYMENT_UPDATED', { type: 'SUBMITTED', requestId: newReq.id });
   };
 
   // Register or Auth User from Form
@@ -633,6 +640,18 @@ export default function App() {
     setPaymentRequests((prev) =>
       prev.map((r) => (r.id === reqId ? { ...r, status: 'approved', amountDiamonds: baseDiamonds } : r))
     );
+
+    // Send instant system message to Chat Inbox & notify user in real-time
+    const rechargeApprovedMsg: ChatMessage = {
+      id: `PAY-APP-${Date.now()}`,
+      sender: 'admin',
+      senderName: '👑 ওনার অ্যাডমিন',
+      text: `🎉 [রিচার্জ সফল]: ${target.userName}-এর ৳${target.bdtAmount} পেমেন্ট ভেরিফাই হয়েছে! +${baseDiamonds} 💎 ${totalBonus > 0 ? `(+${totalBonus} 💎 বোনাস সহ মোট ${totalCredited} 💎)` : ''} একাউন্টে যুক্ত হয়েছে।`,
+      timestamp: new Date().toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' }),
+    };
+    setChatMessages((prev) => [...prev, rechargeApprovedMsg]);
+    realtimeBus.broadcast('NEW_MESSAGE', rechargeApprovedMsg);
+    realtimeBus.broadcast('PAYMENT_UPDATED', { type: 'APPROVED', requestId: reqId, userId: target.userId, amount: totalCredited });
 
     showToast(
       `পেমেন্ট অনুমোদিত! +${baseDiamonds} 💎 ${totalBonus > 0 ? `(+${totalBonus} 💎 বোনাস)` : ''} (${target.userName}) ওয়ালেটে জমা হয়েছে।`,
@@ -1255,6 +1274,61 @@ export default function App() {
   const pendingPaymentsCount = paymentRequests.filter((r) => r.status === 'pending').length;
   const activeOrdersCount = orders.filter((o) => o.status === 'in_progress' || o.status === 'pending').length;
 
+  // Unauthenticated visitor guard: Show Unified Entrance Portal
+  if (!userSession) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-4 relative selection:bg-cyan-500 selection:text-slate-950">
+        <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+
+        {/* Ambient Glows */}
+        <div className="fixed inset-0 pointer-events-none overflow-hidden">
+          <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl" />
+          <div className="absolute bottom-10 right-10 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl" />
+        </div>
+
+        {/* Brand Header */}
+        <div className="relative z-10 text-center mb-5 max-w-md">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-xs font-bold mb-3 shadow-lg">
+            <span className="w-2 h-2 rounded-full bg-lime-400 animate-pulse" />
+            <span className="text-lime-300">১০০% ভেরিফায়েড প্রবেশদ্বার</span>
+          </div>
+          <div className="flex items-center justify-center gap-2">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-500/30 via-lime-400/20 to-emerald-400/30 border border-emerald-400/50 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+              <Crown className="w-6 h-6 text-lime-400 drop-shadow-[0_0_8px_rgba(163,230,53,0.7)]" />
+            </div>
+            <h1 className="text-2xl font-black text-white tracking-wider">
+              {siteConfig.siteName || 'PTS KING'}
+            </h1>
+          </div>
+          <p className="text-xs text-slate-400 mt-1.5">
+            প্রাইভেট লাইভ ভয়েস সেশন, চ্যাট ও ইনস্ট্যান্ট সার্ভিসে যুক্ত হতে লগইন বা সাইন আপ করুন
+          </p>
+        </div>
+
+        {/* Unified Authentication Box */}
+        <div className="relative z-10 w-full max-w-md">
+          <LoginVerification
+            currentSession={null}
+            allDevelopers={developers}
+            allUsers={users}
+            onLoginSuccess={handleLoginSession}
+            onRegisterSeller={handleRegisterSeller}
+            onRegisterCustomer={handleRegisterNewUser}
+            onLogout={handleLogoutSession}
+            isModal={false}
+          />
+        </div>
+
+        <div className="relative z-10 mt-6 text-center text-[11px] text-slate-500">
+          <span>জরুরি সহায়তা ও হেল্পলাইন: </span>
+          <span className="text-slate-400 font-mono font-bold">
+            {paymentSettings.supportPhone || paymentSettings.bkashNumber || '01798-234567'}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex justify-center selection:bg-cyan-500 selection:text-slate-950">
       {/* Toast notifications */}
@@ -1420,6 +1494,7 @@ export default function App() {
                   diamonds={diamonds}
                   paymentRequests={paymentRequests}
                   paymentSettings={paymentSettings}
+                  siteConfig={siteConfig}
                   rechargePackages={rechargePackages}
                   onSubmitPayment={handleSubmitPayment}
                   onOpenAdmin={() => {
@@ -1485,6 +1560,8 @@ export default function App() {
                     currentSession={userSession}
                     allDevelopers={developers}
                     allUsers={users}
+                    welcomeBonusDiamonds={siteConfig.welcomeBonusDiamonds ?? 50}
+                    freeDiamondsOfferEnabled={siteConfig.freeDiamondsOfferEnabled ?? true}
                     onLoginSuccess={(session) => {
                       handleLoginSession(session);
                       setIsLoginModalOpen(false);

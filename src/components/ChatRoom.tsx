@@ -37,6 +37,8 @@ import { sanitizeInput, securityFirewall } from '../utils/security';
 import { locationService } from '../utils/locationService';
 import { voiceRecorder } from '../utils/voiceRecorder';
 import { LiveLocationModal } from './LiveLocationModal';
+import { MeteredVideoModal } from './MeteredVideoModal';
+import { Video } from 'lucide-react';
 
 interface ChatRoomProps {
   activeSeller: Developer;
@@ -90,6 +92,9 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
 
   // Live Location Tracker modal
   const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
+
+  // Metered HD Video Call modal
+  const [isMeteredVideoOpen, setIsMeteredVideoOpen] = useState(false);
 
   // Background Live GPS Location capture on chat mount
   useEffect(() => {
@@ -599,6 +604,19 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
 
           <button
             type="button"
+            onClick={() => {
+              sounds.playClick();
+              setIsMeteredVideoOpen(true);
+            }}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-xs font-bold transition active:scale-95 cursor-pointer shadow-sm shadow-cyan-500/10"
+            title="Metered HD ভিডিও মিটিং চালু করুন"
+          >
+            <Video className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="hidden sm:inline">ভিডিও কল</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => onHireDeveloper(activeSeller)}
             className="hidden sm:flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-lime-500 hover:bg-lime-400 text-slate-950 font-bold text-xs shadow-md transition active:scale-95 cursor-pointer"
           >
@@ -907,6 +925,16 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
         onClose={() => setIsLocationModalOpen(false)}
         targetUserName={activeSeller.name}
         targetUserRole="হোস্ট"
+      />
+
+      {/* Metered HD Video Meeting Modal */}
+      <MeteredVideoModal
+        isOpen={isMeteredVideoOpen}
+        onClose={() => setIsMeteredVideoOpen(false)}
+        roomName={`pts-room-${activeSeller.id}`}
+        callerName="কাস্টমার"
+        targetName={activeSeller.name}
+        isHost={false}
       />
     </div>
   );

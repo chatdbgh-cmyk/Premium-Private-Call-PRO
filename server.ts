@@ -7,9 +7,24 @@ const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json());
 
-// API health endpoint
+// API health endpoint (Returns 200 HTTP status with {"status": "ok"} for UptimeRobot, Render keep-alive & monitoring)
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.status(200).json({
+    status: 'ok',
+    uptime: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
+    service: 'PTS KING Backend',
+  });
+});
+
+// Shorthand /health endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
+
+// HEAD request support for ultra-fast ping checks
+app.head('/api/health', (req, res) => {
+  res.status(200).end();
 });
 
 // Resolve dist directory path

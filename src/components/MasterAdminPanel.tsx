@@ -51,9 +51,12 @@ import {
   User,
   Percent,
   Zap,
-  Wallet
+  Wallet,
+  AlertCircle,
+  Video
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { MeteredVideoModal } from './MeteredVideoModal';
 import {
   Developer,
   PaymentMethod,
@@ -180,6 +183,15 @@ export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
   const [giftAmount, setGiftAmount] = useState<string>('500');
   const [targetUserId, setTargetUserId] = useState<string>(() => users[0]?.id || 'USR-ALEX');
 
+  // Account Ban / Block by Unique User ID state
+  const [banInputUserId, setBanInputUserId] = useState('');
+  const [banReason, setBanReason] = useState('নিয়ম লঙ্ঘন বা স্প্যামিং');
+  const [banFilterTab, setBanFilterTab] = useState<'all' | 'banned' | 'active'>('all');
+
+  // Customer / User Deep Inspector state
+  const [inspectedUser, setInspectedUser] = useState<UserAccount | null>(null);
+  const [userInspectorCustomDiamonds, setUserInspectorCustomDiamonds] = useState('100');
+
   // Omnipotent Seller / Developer Control & Message Inspector states
   const [inspectedDev, setInspectedDev] = useState<Developer | null>(null);
   const [sellerSearchText, setSellerSearchText] = useState('');
@@ -235,6 +247,11 @@ export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
   const [newPinSuccess, setNewPinSuccess] = useState(false);
   const [isPreviewPopupOpen, setIsPreviewPopupOpen] = useState(false);
   const [previewSlideIndex, setPreviewSlideIndex] = useState(0);
+
+  // Metered Video SDK State
+  const [isMeteredAdminTestOpen, setIsMeteredAdminTestOpen] = useState(false);
+  const [meteredAppName, setMeteredAppName] = useState(() => localStorage.getItem('pts_metered_app_name') || 'yourappname');
+  const [meteredRoomName, setMeteredRoomName] = useState(() => localStorage.getItem('pts_metered_room_name') || 'tutorial');
 
   // Multi-Banner Manager States
   const [newBannerImage, setNewBannerImage] = useState('');
@@ -504,6 +521,25 @@ export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
     setNewUserName('');
     setNewUserPhone('');
     sounds.playSuccess();
+  };
+
+  // Matched user for Quick Ban Tool
+  const matchedBanUser = users.find((u) => {
+    if (!banInputUserId.trim()) return false;
+    const clean = banInputUserId.trim().toLowerCase();
+    return (
+      u.id.toLowerCase() === clean ||
+      (u.phone && u.phone === banInputUserId.trim()) ||
+      (u.username && u.username.toLowerCase() === clean) ||
+      u.name.toLowerCase() === clean
+    );
+  });
+
+  const handleExecuteBanAction = (targetUser: UserAccount, shouldBan: boolean) => {
+    onUpdateUser(targetUser.id, { isBanned: shouldBan });
+    sounds.playSuccess();
+    triggerConfetti();
+    alert(`✅ ইউজার ${targetUser.name} (${targetUser.id}) সফলভাবে ${shouldBan ? 'ব্যান/ব্লক (Banned)' : 'আনব্যান/সক্রিয় (Active)'} করা হয়েছে!`);
   };
 
   // Calculations for Overview Dashboard & Withdrawals
@@ -801,6 +837,144 @@ export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
                       {users.reduce((acc, u) => acc + (u.diamonds || 0), 0).toLocaleString()} 💎
                     </div>
                     <p className="text-[10px] text-slate-400 mt-0.5">সকল ইউজারের ওয়ালেট ব্যালেন্স</p>
+                  </div>
+                </div>
+
+                {/* Dedicated Account Ban / Block by Unique ID Tool */}
+                <div className="bg-gradient-to-br from-rose-950/50 via-slate-900 to-red-950/40 border-2 border-rose-500/50 rounded-3xl p-4 sm:p-5 shadow-2xl space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-rose-500/30">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-2xl bg-rose-600/30 border border-rose-500/50 text-rose-300 flex items-center justify-center shadow-inner">
+                        <Lock className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-black text-white flex items-center gap-2">
+                          <span>🚫 ইউনিক আইডি দিয়ে একাউন্ট ব্যান / ব্লক কন্ট্রোল</span>
+                          <span className="text-[10px] bg-rose-500 text-white font-black px-2 py-0.5 rounded-full uppercase">
+                            ওনার স্পেশাল
+                          </span>
+                        </h4>
+                        <p className="text-[11px] text-slate-300">
+                          যেকোনো ইউজারের ইউনিক আইডি (যেমন: USR-ALEX বা ফোন নম্বর) দিয়ে মুহূর্তেই একাউন্ট ব্যান বা আনব্যান করুন।
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] font-bold text-rose-300 bg-rose-950/80 border border-rose-800 px-2.5 py-1 rounded-xl">
+                        ব্যানকৃত একাউন্ট: {users.filter((u) => u.isBanned).length} টি
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Input & Action Bar */}
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                      <div className="sm:col-span-2">
+                        <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                          টার্গেট ইউজার আইডি / ফোন / ইউজারনেম:
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={banInputUserId}
+                            onChange={(e) => setBanInputUserId(e.target.value)}
+                            placeholder="যেমন: USR-ALEX বা CUST-1029 বা 01700-000000"
+                            className="w-full bg-slate-950 border border-rose-500/50 focus:border-rose-400 rounded-xl px-3.5 py-2.5 text-xs font-mono text-cyan-300 focus:outline-none shadow-inner"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                          ব্যান করার কারণ (Reason):
+                        </label>
+                        <select
+                          value={banReason}
+                          onChange={(e) => setBanReason(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-rose-500"
+                        >
+                          <option value="নিয়ম লঙ্ঘন বা স্প্যামিং">নিয়ম লঙ্ঘন বা স্প্যামিং</option>
+                          <option value="প্রতারণামূলক কার্যকলাপ">প্রতারণামূলক কার্যকলাপ</option>
+                          <option value="অবাঞ্ছিত ভাষা ও আচরণ">অবাঞ্ছিত ভাষা ও আচরণ</option>
+                          <option value="ভুল পেমেন্ট TrxID সাবমিট">ভুল পেমেন্ট TrxID সাবমিট</option>
+                          <option value="ওনারের স্পেশাল সাসপেনশন">ওনারের স্পেশাল সাসপেনশন</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Matched User Preview Card if user typed something */}
+                    {matchedBanUser ? (
+                      <div className="p-3.5 rounded-2xl bg-slate-950 border border-rose-500/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-fadeIn">
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={matchedBanUser.avatar || `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(matchedBanUser.name)}`}
+                            alt={matchedBanUser.name}
+                            className="w-10 h-10 rounded-xl bg-slate-900 border border-rose-500/30 object-cover"
+                          />
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-white">{matchedBanUser.name}</span>
+                              <span className="text-[10px] font-mono text-cyan-300 bg-cyan-950 px-1.5 py-0.5 rounded border border-cyan-800">
+                                {matchedBanUser.id}
+                              </span>
+                              <span
+                                className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                  matchedBanUser.isBanned
+                                    ? 'bg-rose-950 text-rose-300 border border-rose-700 animate-pulse'
+                                    : 'bg-emerald-950 text-emerald-300 border border-emerald-700'
+                                }`}
+                              >
+                                {matchedBanUser.isBanned ? '🚫 বর্তমানে ব্যানকৃত' : '🟢 বর্তমানে সক্রিয় (Active)'}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-400 mt-0.5">
+                              মোবাইল: <span className="text-slate-200 font-mono">{matchedBanUser.phone}</span> • ওয়ালেট: <span className="text-amber-300 font-mono font-bold">{matchedBanUser.diamonds} 💎</span>
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Ban / Unban Trigger Button & Inspect Button */}
+                        <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setInspectedUser(matchedBanUser);
+                              sounds.playReceive();
+                            }}
+                            className="w-full sm:w-auto px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-cyan-300 font-bold text-xs rounded-xl border border-slate-700 shadow transition active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
+                          >
+                            <Search className="w-3.5 h-3.5 text-cyan-400" />
+                            <span>🔍 সম্পূর্ণ তথ্য ও হিস্ট্রি দেখুন</span>
+                          </button>
+
+                          {matchedBanUser.isBanned ? (
+                            <button
+                              type="button"
+                              onClick={() => handleExecuteBanAction(matchedBanUser, false)}
+                              className="w-full sm:w-auto px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-emerald-500/20 transition active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
+                            >
+                              <CheckCircle className="w-3.5 h-3.5" />
+                              <span>✅ আনব্যান করুন (Unban)</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleExecuteBanAction(matchedBanUser, true)}
+                              className="w-full sm:w-auto px-4 py-2 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 text-white font-black text-xs rounded-xl shadow-lg shadow-rose-600/30 transition active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                              <span>🚫 ব্যান করুন (Ban)</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ) : banInputUserId.trim() ? (
+                      <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 text-xs text-amber-300 flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                        <span>"{banInputUserId}" আইডির কোনো ইউজার পাওয়া যায়নি। সঠিক ইউজার আইডি বা মোবাইল নম্বর দিন।</span>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
 
@@ -2889,7 +3063,97 @@ export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
                   </button>
                 </div>
 
-                {/* D. FULL DATABASE BACKUP & RESTORE MODULE */}
+                {/* D. METERED VIDEO SDK CALLING SUITE MODULE */}
+                <div className="bg-slate-900 border border-cyan-500/40 rounded-2xl p-4 shadow-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Video className="w-4 h-4 text-cyan-400" />
+                      <span>📹 Metered HD ভিডিও ও ভয়েস কল কনফিগারেশন (SDK v1.4.3)</span>
+                    </h3>
+                    <span className="text-[10px] text-cyan-400 font-mono bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-500/30 font-bold">
+                      WebRTC Frame SDK
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    Metered.ca ভিডিও ফ্রেম SDK এর মাধ্যমে ওয়েবসাইট জুড়ে সরাসরি ফুল-স্ক্রিন HD ভিডিও কলিং, স্ক্রিন শেয়ার ও গ্রুপ মিটিং পরিচালনা করা হয়। আপনার Metered অ্যাকাউন্ট থেকে ইউনিক App Name ও Room Name এখানে সেট করুন।
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                        Metered App Name / ডোমেন:
+                      </label>
+                      <div className="flex items-center">
+                        <input
+                          type="text"
+                          value={meteredAppName}
+                          onChange={(e) => setMeteredAppName(e.target.value)}
+                          placeholder="yourappname"
+                          className="w-full bg-slate-950 border border-slate-700 rounded-l-xl px-3 py-2 text-xs font-mono text-cyan-300 font-bold focus:outline-none focus:border-cyan-500"
+                        />
+                        <span className="bg-slate-800 border border-l-0 border-slate-700 px-2.5 py-2 text-[11px] text-slate-400 rounded-r-xl font-mono">
+                          .metered.live
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                        ডিফল্ট রুম নেম (Room Name):
+                      </label>
+                      <input
+                        type="text"
+                        value={meteredRoomName}
+                        onChange={(e) => setMeteredRoomName(e.target.value)}
+                        placeholder="tutorial"
+                        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-white font-bold focus:outline-none focus:border-cyan-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-300 space-y-1">
+                    <div className="text-[11px] text-slate-400 font-mono">
+                      কম্পিউটেড মিটিং লিঙ্ক:{' '}
+                      <span className="text-lime-300 font-bold">
+                        https://{meteredAppName.trim() || 'yourappname'}.metered.live/{meteredRoomName.trim() || 'tutorial'}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-slate-400">
+                      💡 এটি কাস্টমার চ্যাটরুম, সেলার পোর্টাল এবং সরাসরি ভিডিও মিটিং মডালে সংযুক্ত রয়েছে।
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        localStorage.setItem('pts_metered_app_name', meteredAppName.trim());
+                        localStorage.setItem('pts_metered_room_name', meteredRoomName.trim());
+                        sounds.playSuccess();
+                        alert('✅ Metered ভিডিও সেটিংস সফলভাবে সেভ হয়েছে!');
+                      }}
+                      className="w-full sm:flex-1 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs rounded-xl shadow transition active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <Check className="w-4 h-4" />
+                      <span>মিটারড কনফিগারেশন সেভ করুন</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        sounds.playClick();
+                        setIsMeteredAdminTestOpen(true);
+                      }}
+                      className="w-full sm:w-auto px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-lime-500 hover:from-emerald-400 hover:to-lime-400 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-emerald-500/20 transition active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <Video className="w-4 h-4" />
+                      <span>📹 লাইভ টেস্ট রুম ওপেন করুন</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* E. FULL DATABASE BACKUP & RESTORE MODULE */}
                 <div className="bg-slate-900 border border-emerald-500/30 rounded-2xl p-4 shadow-xl space-y-3">
                   <div className="flex items-center justify-between">
                     <h3 className="text-sm font-bold text-white flex items-center gap-2">
@@ -3420,6 +3684,16 @@ export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
           </div>
         )}
       </AnimatePresence>
+
+      {/* Admin Metered Video Test Modal */}
+      <MeteredVideoModal
+        isOpen={isMeteredAdminTestOpen}
+        onClose={() => setIsMeteredAdminTestOpen(false)}
+        roomName={meteredRoomName}
+        callerName="👑 ওনার অ্যাডমিন"
+        targetName="টেস্ট রুম"
+        isHost={true}
+      />
     </div>
   );
 };

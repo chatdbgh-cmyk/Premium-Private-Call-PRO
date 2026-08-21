@@ -100,6 +100,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const filteredHosts = developers.filter((host) => {
     const matchesSearch =
       host.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (host.username && host.username.toLowerCase().includes(searchQuery.toLowerCase())) ||
       host.service.toLowerCase().includes(searchQuery.toLowerCase()) ||
       host.skills.some((skill) => skill.toLowerCase().includes(searchQuery.toLowerCase()));
 

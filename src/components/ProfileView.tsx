@@ -21,9 +21,10 @@ import {
   Info,
   Crown,
   Store,
-  LogIn
+  LogIn,
+  LogOut
 } from 'lucide-react';
-import { PaymentMethod, PaymentRequest, PaymentSettings, RechargePackage, UserAccount, UserSession } from '../types';
+import { PaymentMethod, PaymentRequest, PaymentSettings, RechargePackage, SiteConfig, UserAccount, UserSession } from '../types';
 import { RECHARGE_PACKAGES } from '../data/initialData';
 import { sounds } from '../utils/sound';
 
@@ -44,6 +45,7 @@ interface ProfileViewProps {
   diamonds: number;
   paymentRequests: PaymentRequest[];
   paymentSettings: PaymentSettings;
+  siteConfig?: SiteConfig;
   rechargePackages?: RechargePackage[];
   onSubmitPayment: (data: {
     method: PaymentMethod;
@@ -69,6 +71,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   diamonds,
   paymentRequests,
   paymentSettings,
+  siteConfig,
   rechargePackages = [],
   onSubmitPayment,
   onOpenAdmin,
@@ -321,6 +324,18 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               <Edit3 className="w-3.5 h-3.5 text-cyan-400" />
               <span className="text-xs font-semibold">এডিট</span>
             </button>
+
+            {onLogoutSession && (
+              <button
+                type="button"
+                onClick={onLogoutSession}
+                className="p-2 rounded-xl bg-rose-950/60 hover:bg-rose-900 border border-rose-500/40 text-rose-300 hover:text-white transition cursor-pointer text-xs flex items-center gap-1"
+                title="সেশন থেকে লগআউট করুন"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span className="text-xs font-semibold">লগআউট</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -406,9 +421,19 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             </div>
           </div>
           <span className="text-[10px] text-amber-400 font-mono font-bold bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/30">
-            ১০০ 💎 = ১০০ টাকা
+            {paymentSettings.diamondRateDiamonds || 100} 💎 = ৳{paymentSettings.diamondRateBdt || 100}
           </span>
         </div>
+
+        {/* Dynamic Promotional Offer Banner */}
+        {siteConfig?.freeDiamondsOfferEnabled !== false && siteConfig?.freeDiamondsOfferTitle && (
+          <div className="bg-gradient-to-r from-amber-500/15 via-yellow-500/10 to-orange-500/15 border border-amber-500/40 rounded-xl p-2.5 flex items-center gap-2 animate-pulse">
+            <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+            <p className="text-[11px] font-bold text-amber-200 leading-tight">
+              {siteConfig.freeDiamondsOfferTitle}
+            </p>
+          </div>
+        )}
 
         {/* Payment Method Selector */}
         <div className="grid grid-cols-4 gap-2">

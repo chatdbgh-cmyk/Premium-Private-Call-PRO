@@ -89,6 +89,11 @@ export interface ChatMessage {
   id: string;
   sender: 'user' | 'bot' | 'developer' | 'admin';
   senderName?: string;
+  senderUserId?: string;
+  receiverUserId?: string;
+  senderUsername?: string;
+  receiverUsername?: string;
+  senderAvatar?: string;
   text: string;
   timestamp: string;
   createdAt?: number;

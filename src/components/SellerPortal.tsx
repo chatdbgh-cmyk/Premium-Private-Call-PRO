@@ -57,10 +57,12 @@ import {
 import { Developer, ServiceOrder, ChatMessage, UserAccount, SellerWithdrawRequest, DailyTimeSlot, DayAvailabilitySchedule } from '../types';
 import { sounds } from '../utils/sound';
 import { LiveLocationModal } from './LiveLocationModal';
+import { MeteredVideoModal } from './MeteredVideoModal';
 import { locationService } from '../utils/locationService';
 import { webrtcVoice } from '../utils/webrtc';
 import { voiceRecorder } from '../utils/voiceRecorder';
 import { realtimeBus } from '../utils/realtime';
+import { Video } from 'lucide-react';
 
 interface SellerPortalProps {
   seller: Developer;
@@ -117,6 +119,9 @@ export const SellerPortal: React.FC<SellerPortalProps> = ({
   const [activeScheduleDateKey, setActiveScheduleDateKey] = useState<string>('today');
   const [isTimeSaleActive, setIsTimeSaleActive] = useState<boolean>(seller.isTimeSaleActive ?? true);
   const [slotFeedback, setSlotFeedback] = useState<string | null>(null);
+
+  // Metered HD Video Meeting modal
+  const [isMeteredVideoOpen, setIsMeteredVideoOpen] = useState(false);
 
   // Helper to generate slots for a day
   const generateSlotsForDay = (
@@ -455,8 +460,8 @@ export const SellerPortal: React.FC<SellerPortalProps> = ({
     const clampedHours = Math.max(1, Math.min(24, newHours));
     sounds.playClick();
 
-    setSchedules((prev) =>
-      prev.map((s) => {
+    setSchedules((prev) => {
+      const next = prev.map((s) => {
         if (s.dateKey !== dayKey) return s;
         const currentSlots = s.customSlots || [];
         let updatedSlots: DailyTimeSlot[];
@@ -481,10 +486,37 @@ export const SellerPortal: React.FC<SellerPortalProps> = ({
           totalWorkingHours: clampedHours,
           customSlots: updatedSlots,
         };
-      })
-    );
+      });
 
-    setSlotFeedback(`সফলভাবে ${dayKey === 'today' ? 'আজকের' : 'আগামীকালের'} কাজের সময় ${clampedHours} ঘণ্টায় সেট করা হয়েছে।`);
+      // If updating today, auto sync to seller profile immediately
+      if (dayKey === 'today') {
+        const todaySched = next.find((s) => s.dateKey === 'today');
+        if (todaySched) {
+          const updatedSlots = todaySched.customSlots || [];
+          const bookedCount = updatedSlots.filter((slot) => slot.isBooked).length;
+          onUpdateSellerProfile({
+            dailySchedules: next,
+            customSlots: updatedSlots,
+            maxAvailableHours: clampedHours,
+            bookedHours: bookedCount,
+            diamondPerHour: rate,
+            isTimeSaleActive: isTimeSaleActive,
+          });
+          realtimeBus.broadcast('SLOT_AVAILABILITY_UPDATED', {
+            id: seller.id,
+            ...seller,
+            dailySchedules: next,
+            customSlots: updatedSlots,
+            maxAvailableHours: clampedHours,
+            bookedHours: bookedCount,
+          });
+        }
+      }
+
+      return next;
+    });
+
+    setSlotFeedback(`সফলভাবে ${dayKey === 'today' ? 'আজকের' : 'আগামীকালের'} কাজের সময় ${clampedHours} ঘণ্টায় সেট ও সেভ করা হয়েছে।`);
     setTimeout(() => setSlotFeedback(null), 3000);
   };
 
@@ -1858,6 +1890,19 @@ export const SellerPortal: React.FC<SellerPortalProps> = ({
                 type="button"
                 onClick={() => {
                   sounds.playClick();
+                  setIsMeteredVideoOpen(true);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-xs font-bold transition active:scale-95 cursor-pointer shadow-sm shadow-cyan-500/10"
+                title="Metered HD ভিডিও মিটিং চালু করুন"
+              >
+                <Video className="w-3.5 h-3.5 text-cyan-400" />
+                <span>📹 HD ভিডিও মিটিং</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  sounds.playClick();
                   setTrackedCustomerName('অ্যাক্টিভ কাস্টমার');
                   setIsLocationModalOpen(true);
                 }}
@@ -2478,6 +2523,16 @@ export const SellerPortal: React.FC<SellerPortalProps> = ({
         onClose={() => setIsLocationModalOpen(false)}
         targetUserName={trackedCustomerName}
         targetUserRole="কাস্টমার"
+      />
+
+      {/* Metered HD Video Meeting Modal */}
+      <MeteredVideoModal
+        isOpen={isMeteredVideoOpen}
+        onClose={() => setIsMeteredVideoOpen(false)}
+        roomName={`pts-room-${seller.id}`}
+        callerName={`${seller.name} (হোস্ট সেলার)`}
+        targetName="কাস্টমার"
+        isHost={true}
       />
     </div>
   );

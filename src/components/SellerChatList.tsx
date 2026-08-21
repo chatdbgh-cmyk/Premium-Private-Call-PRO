@@ -55,6 +55,7 @@ export const SellerChatList: React.FC<SellerChatListProps> = ({
   const filteredSellers = sellers.filter((seller) => {
     const matchesSearch =
       seller.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (seller.username && seller.username.toLowerCase().includes(searchQuery.toLowerCase())) ||
       seller.service.toLowerCase().includes(searchQuery.toLowerCase());
 
     if (!matchesSearch) return false;

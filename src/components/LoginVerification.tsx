@@ -22,6 +22,8 @@ interface LoginVerificationProps {
   currentSession: UserSession | null;
   allDevelopers?: Developer[];
   allUsers?: UserAccount[];
+  welcomeBonusDiamonds?: number;
+  freeDiamondsOfferEnabled?: boolean;
   onLoginSuccess: (userData: UserSession) => void;
   onRegisterSeller?: (sellerData: Partial<Developer>, password?: string) => void;
   onRegisterCustomer?: (name: string, phone: string, password?: string) => void;
@@ -34,6 +36,8 @@ export const LoginVerification: React.FC<LoginVerificationProps> = ({
   currentSession,
   allDevelopers = [],
   allUsers = [],
+  welcomeBonusDiamonds = 50,
+  freeDiamondsOfferEnabled = true,
   onLoginSuccess,
   onRegisterCustomer,
   onLogout,
@@ -125,7 +129,9 @@ export const LoginVerification: React.FC<LoginVerificationProps> = ({
     localStorage.setItem('user_session', JSON.stringify(customerSession));
     sounds.playDiamond();
     setStatusMessage({
-      text: `🎉 স্বাগতম ${name}! আপনার সাইন আপ সফল হয়েছে এবং ফ্রি ৫০ 💎 ওয়েলকাম ডায়মন্ড যুক্ত হয়েছে!`,
+      text: freeDiamondsOfferEnabled && welcomeBonusDiamonds > 0
+        ? `🎉 স্বাগতম ${name}! আপনার সাইন আপ সফল হয়েছে এবং ফ্রি ${welcomeBonusDiamonds} 💎 ওয়েলকাম ডায়মন্ড যুক্ত হয়েছে!`
+        : `🎉 স্বাগতম ${name}! আপনার সাইন আপ সফলভাবে সম্পন্ন হয়েছে।`,
       type: 'success',
     });
 
@@ -205,6 +211,7 @@ export const LoginVerification: React.FC<LoginVerificationProps> = ({
     // Check 3: Registered Customer in database table
     const matchingUser = allUsers.find(
       (u) =>
+        u.id.toLowerCase() === inputUserOrPhone.toLowerCase() ||
         (u.phone && u.phone === inputUserOrPhone) ||
         u.name.toLowerCase() === inputUserOrPhone.toLowerCase() ||
         (u.username && u.username.toLowerCase() === inputUserOrPhone.toLowerCase())
@@ -213,7 +220,7 @@ export const LoginVerification: React.FC<LoginVerificationProps> = ({
     if (matchingUser) {
       if (matchingUser.isBanned) {
         sounds.playError();
-        setStatusMessage({ text: '⚠️ এই অ্যাকাউন্টটি সাময়িকভাবে স্থগিত (Banned) করা হয়েছে। অ্যাডমিনের সাথে যোগাযোগ করুন।', type: 'error' });
+        setStatusMessage({ text: '🚫 এই অ্যাকাউন্টটি ওনার প্যানেল থেকে ব্যান/ব্লক (Banned) করা হয়েছে! বিস্তারিত জানতে অ্যাডমিনের সাথে যোগাযোগ করুন।', type: 'error' });
         return;
       }
 
@@ -315,7 +322,9 @@ export const LoginVerification: React.FC<LoginVerificationProps> = ({
         </h2>
         <p className="text-xs text-slate-400 mt-1">
           {authMode === 'signup'
-            ? '🎁 সাইন আপ করলেই পাবেন ফ্রি ৫০ 💎 ওয়েলকাম ডায়মন্ড বোনাস!'
+            ? freeDiamondsOfferEnabled && welcomeBonusDiamonds > 0
+              ? `🎁 সাইন আপ করলেই পাবেন ফ্রি ${welcomeBonusDiamonds} 💎 ওয়েলকাম ডায়মন্ড বোনাস!`
+              : 'আপনার নাম, মোবাইল নম্বর এবং পাসওয়ার্ড দিয়ে নতুন অ্যাকাউন্ট খুলুন।'
             : 'আপনার নিবন্ধিত মোবাইল নম্বর এবং পাসওয়ার্ড দিয়ে প্রবেশ করুন।'}
         </p>
       </div>
