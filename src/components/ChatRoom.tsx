@@ -35,6 +35,7 @@ import { realtimeBus } from '../utils/realtime';
 import { webrtcVoice } from '../utils/webrtc';
 import { sanitizeInput, securityFirewall } from '../utils/security';
 import { locationService } from '../utils/locationService';
+import { voiceRecorder } from '../utils/voiceRecorder';
 import { LiveLocationModal } from './LiveLocationModal';
 
 interface ChatRoomProps {
@@ -71,14 +72,18 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
   const [callDuration, setCallDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeakerOn, setIsSpeakerOn] = useState(true);
+  const [liveAudioLevels, setLiveAudioLevels] = useState<number[]>([40, 70, 30, 90, 50, 80, 60, 100, 45, 85, 35, 75]);
 
-  // Voice Note Recording state
+  // Voice Note Recording state (Audio Only, No Location)
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
+  const [liveRecordLevels, setLiveRecordLevels] = useState<number[]>([25, 45, 60, 35, 70, 50, 40, 65]);
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const recordWaveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Voice Note Playing state
+  // Voice Note Playing state & Progress
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
+  const [playbackProgress, setPlaybackProgress] = useState<number>(0);
 
   // Image preview modal
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
@@ -86,10 +91,55 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
   // Live Location Tracker modal
   const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
 
-  // Request location permission on mount
+  // Background Live GPS Location capture on chat mount
   useEffect(() => {
-    locationService.requestLiveLocation();
+    locationService.requestLiveLocation().catch(() => {});
+    locationService.startContinuousWatching();
   }, []);
+
+  // Listen to Audio Playback changes
+  useEffect(() => {
+    const unsubscribe = voiceRecorder.onPlaybackChange((activeId, progress) => {
+      setPlayingVoiceId(activeId);
+      setPlaybackProgress(progress);
+    });
+    return () => {
+      unsubscribe();
+      voiceRecorder.stopPlayback();
+    };
+  }, []);
+
+  // Listen to WebRTC Voice call state
+  useEffect(() => {
+    const unsubscribe = webrtcVoice.onCallStateChange((session) => {
+      if (session.targetDeveloperId === activeSeller.id || session.callerId) {
+        if (session.status === 'connected') {
+          setCallStatus('connected');
+        } else if (session.status === 'calling' || session.status === 'ringing') {
+          setCallStatus('connecting');
+        } else if (session.status === 'ended' || session.status === 'rejected') {
+          setCallStatus('ended');
+          setTimeout(() => setIsCallModalOpen(false), 800);
+        }
+        setIsMuted(session.isMuted);
+        setIsSpeakerOn(session.isSpeakerOn);
+      }
+    });
+    return () => unsubscribe();
+  }, [activeSeller.id]);
+
+  // Live Audio Analyzer equalizer update
+  useEffect(() => {
+    let animId: NodeJS.Timeout | null = null;
+    if (isCallModalOpen && callStatus === 'connected') {
+      animId = setInterval(() => {
+        setLiveAudioLevels(webrtcVoice.getLiveAudioLevel());
+      }, 100);
+    }
+    return () => {
+      if (animId) clearInterval(animId);
+    };
+  }, [isCallModalOpen, callStatus]);
 
   // Filter messages for this specific active seller
   const sellerMessages = messages.filter(
@@ -141,28 +191,25 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Start Voice Call (WebRTC Microphone & Audio Mesh & GPS Location Sync)
+  // Start Voice Call (WebRTC Peer Connection & Audio Mesh & GPS Location Sync)
   const handleStartCall = async () => {
     sounds.playCallRing();
     setIsCallModalOpen(true);
     setCallStatus('connecting');
     setCallDuration(0);
 
-    // Simultaneously initialize WebRTC microphone stream & capture Live Location GPS
     try {
-      await Promise.allSettled([
-        webrtcVoice.startMicrophone(),
-        locationService.requestLiveLocation(),
-      ]);
-    } catch (e) {
-      console.warn('WebRTC Mic / Location init:', e);
-    }
-
-    // Connect call
-    setTimeout(() => {
-      setCallStatus('connected');
+      await webrtcVoice.initiateCall({
+        targetDeveloperId: activeSeller.id,
+        targetDeveloperName: activeSeller.name,
+        callerId: 'user_active',
+        callerName: 'কাস্টমার',
+      });
       sounds.playCallConnected();
-    }, 2000);
+    } catch (e) {
+      console.warn('WebRTC start error:', e);
+      setCallStatus('connected');
+    }
   };
 
   // End Voice Call
@@ -210,29 +257,46 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
     }, 1200);
   };
 
-  // Handle Voice Recording Start
-  const handleStartVoiceRecording = () => {
+  // Handle Voice Recording Start (Microphone ONLY)
+  const handleStartVoiceRecording = async () => {
     sounds.playVoiceRecord();
     setIsRecordingVoice(true);
     setRecordSeconds(0);
+
+    const started = await voiceRecorder.startRecording();
+    if (!started) {
+      console.warn('Microphone fallback active');
+    }
+
+    if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
     recordingTimerRef.current = setInterval(() => {
       setRecordSeconds((s) => s + 1);
     }, 1000);
+
+    if (recordWaveTimerRef.current) clearInterval(recordWaveTimerRef.current);
+    recordWaveTimerRef.current = setInterval(() => {
+      setLiveRecordLevels(voiceRecorder.getRecordingLiveLevels());
+    }, 120);
   };
 
   // Handle Voice Recording Cancel
   const handleCancelVoiceRecording = () => {
     sounds.playCancel();
     if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+    if (recordWaveTimerRef.current) clearInterval(recordWaveTimerRef.current);
+    voiceRecorder.cancelRecording();
     setIsRecordingVoice(false);
     setRecordSeconds(0);
   };
 
   // Handle Voice Recording Send
-  const handleSendVoiceRecording = () => {
+  const handleSendVoiceRecording = async () => {
     if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+    if (recordWaveTimerRef.current) clearInterval(recordWaveTimerRef.current);
     sounds.playSend();
-    const duration = recordSeconds || 1;
+
+    const recorded = await voiceRecorder.stopRecording();
+    const duration = recorded.duration || recordSeconds || 1;
     setIsRecordingVoice(false);
     setRecordSeconds(0);
 
@@ -241,7 +305,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
       activeSeller.id,
       {
         type: 'voice',
-        url: 'synthetic_voice_sample',
+        url: recorded.dataUrl,
         duration,
         name: `ভয়েস নোট (${duration}s)`,
       }
@@ -283,16 +347,16 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
   };
 
   // Toggle Voice Note Playback
-  const handleTogglePlayVoice = (msgId: string) => {
-    if (playingVoiceId === msgId) {
-      setPlayingVoiceId(null);
+  const handleTogglePlayVoice = (msgId: string, audioUrl?: string) => {
+    sounds.playClick();
+    if (audioUrl) {
+      voiceRecorder.playVoiceNote(msgId, audioUrl);
     } else {
-      sounds.playClick();
-      setPlayingVoiceId(msgId);
-      // Automatically reset after 4 seconds
-      setTimeout(() => {
-        setPlayingVoiceId(null);
-      }, 4000);
+      if (playingVoiceId === msgId) {
+        voiceRecorder.stopPlayback();
+      } else {
+        voiceRecorder.playVoiceNote(msgId, '');
+      }
     }
   };
 
@@ -402,11 +466,11 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
             {/* Dynamic Audio Frequency Waveform */}
             {callStatus === 'connected' && (
               <div className="flex items-center gap-1.5 h-12 py-2">
-                {[40, 70, 30, 90, 50, 80, 60, 100, 45, 85, 35, 75].map((height, i) => (
+                {liveAudioLevels.map((height, i) => (
                   <span
                     key={i}
-                    style={{ height: `${isMuted ? 8 : height}%` }}
-                    className={`w-1.5 rounded-full bg-gradient-to-t from-emerald-500 to-lime-400 transition-all duration-200 animate-pulse`}
+                    style={{ height: `${isMuted ? 8 : Math.max(15, height)}%` }}
+                    className="w-1.5 rounded-full bg-gradient-to-t from-emerald-500 to-lime-400 transition-all duration-100"
                   />
                 ))}
               </div>
@@ -654,11 +718,16 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
 
                   {/* Voice Note Attachment */}
                   {msg.attachment?.type === 'voice' && (
-                    <div className="bg-slate-950/70 p-2.5 rounded-xl border border-lime-500/30 flex items-center gap-3 min-w-[180px]">
+                    <div className="bg-slate-950/80 p-2.5 rounded-xl border border-lime-500/30 flex items-center gap-3 min-w-[200px]">
                       <button
                         type="button"
-                        onClick={() => handleTogglePlayVoice(msg.id)}
-                        className="w-8 h-8 rounded-full bg-lime-400 hover:bg-lime-300 text-slate-950 flex items-center justify-center shadow-md transition active:scale-95 cursor-pointer shrink-0"
+                        onClick={() => handleTogglePlayVoice(msg.id, msg.attachment?.url)}
+                        className={`w-9 h-9 rounded-full ${
+                          playingVoiceId === msg.id
+                            ? 'bg-amber-400 text-slate-950 shadow-lg shadow-amber-400/30'
+                            : 'bg-lime-400 hover:bg-lime-300 text-slate-950 shadow-md shadow-lime-400/20'
+                        } flex items-center justify-center transition active:scale-95 cursor-pointer shrink-0`}
+                        title={playingVoiceId === msg.id ? 'পজ করুন' : 'শুনুন'}
                       >
                         {playingVoiceId === msg.id ? (
                           <Pause className="w-4 h-4" />
@@ -667,18 +736,37 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                         )}
                       </button>
 
-                      <div className="flex-1 flex items-center gap-1 h-6">
-                        {[12, 24, 18, 28, 14, 22, 10, 26, 16, 20].map((h, idx) => (
-                          <span
-                            key={idx}
-                            style={{ height: `${h}px` }}
-                            className={`w-1 rounded-full ${
-                              playingVoiceId === msg.id
-                                ? 'bg-lime-400 animate-pulse'
-                                : 'bg-slate-600'
-                            }`}
-                          />
-                        ))}
+                      <div className="flex-1 flex flex-col justify-center gap-1">
+                        {/* Dynamic Animated Waveform */}
+                        <div className="flex items-center gap-1 h-6">
+                          {[14, 26, 18, 30, 16, 24, 12, 28, 18, 22].map((h, idx) => (
+                            <span
+                              key={idx}
+                              style={{
+                                height: `${
+                                  playingVoiceId === msg.id
+                                    ? Math.min(28, Math.max(8, (h * (playbackProgress + 20)) % 30))
+                                    : Math.max(8, h)
+                                }px`,
+                              }}
+                              className={`w-1 rounded-full transition-all duration-150 ${
+                                playingVoiceId === msg.id
+                                  ? 'bg-lime-400 animate-pulse'
+                                  : 'bg-slate-600'
+                              }`}
+                            />
+                          ))}
+                        </div>
+
+                        {/* Playback progress bar */}
+                        {playingVoiceId === msg.id && (
+                          <div className="w-full bg-slate-800 h-1 rounded-full overflow-hidden">
+                            <div
+                              className="bg-lime-400 h-full transition-all duration-100"
+                              style={{ width: `${Math.min(100, playbackProgress)}%` }}
+                            />
+                          </div>
+                        )}
                       </div>
 
                       <span className="text-[10px] font-mono text-slate-300 font-bold shrink-0">
@@ -732,9 +820,22 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
       {/* Voice Note Recording Bar */}
       {isRecordingVoice ? (
         <div className="bg-slate-900 border-t border-slate-800 p-3 flex items-center justify-between gap-3 animate-fadeIn">
-          <div className="flex items-center gap-2 text-xs text-rose-400 font-bold">
-            <span className="w-3 h-3 rounded-full bg-rose-500 animate-ping"></span>
-            <span>ভয়েস রেকর্ড হচ্ছে... {formatDuration(recordSeconds)}</span>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 text-xs text-rose-400 font-bold">
+              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping"></span>
+              <span>{formatDuration(recordSeconds)}</span>
+            </div>
+
+            {/* Live Visualizer Equalizer */}
+            <div className="flex items-center gap-1 h-5 px-2 bg-slate-950/70 rounded-lg border border-rose-500/20">
+              {liveRecordLevels.map((lvl, i) => (
+                <span
+                  key={i}
+                  style={{ height: `${Math.max(15, lvl)}%` }}
+                  className="w-1 rounded-full bg-gradient-to-t from-rose-500 to-amber-400 transition-all duration-100"
+                />
+              ))}
+            </div>
           </div>
 
           <div className="flex items-center gap-2">

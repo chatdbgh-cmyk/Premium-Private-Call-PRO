@@ -65,7 +65,8 @@ import {
   BotAutoReply,
   ChatMessage,
   SellerWithdrawRequest,
-  MarketingBanner
+  MarketingBanner,
+  RechargePackage
 } from '../types';
 import { sounds } from '../utils/sound';
 import { checkAdminAuth } from '../utils/auth';
@@ -108,6 +109,8 @@ interface MasterAdminPanelProps {
     attachment?: ChatMessage['attachment'],
     senderOverride?: 'user' | 'bot' | 'developer' | 'admin'
   ) => void;
+  rechargePackages?: RechargePackage[];
+  onUpdateRechargePackages?: (packages: RechargePackage[]) => void;
 }
 
 export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
@@ -142,6 +145,8 @@ export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
   onImpersonateUser,
   chatMessages = [],
   onSendMessage,
+  rechargePackages = [],
+  onUpdateRechargePackages,
 }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [adminEmail, setAdminEmail] = useState('');
@@ -300,8 +305,12 @@ export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
     const isVideo =
       newBannerMediaType === 'video' ||
       mediaSource.startsWith('data:video') ||
+      mediaSource.includes('youtube.com') ||
+      mediaSource.includes('youtu.be') ||
       mediaSource.endsWith('.mp4') ||
-      mediaSource.endsWith('.webm');
+      mediaSource.endsWith('.webm') ||
+      mediaSource.endsWith('.mov') ||
+      mediaSource.endsWith('.ogg');
 
     const newBanner: MarketingBanner = {
       id: `banner-${Date.now()}`,
@@ -2102,7 +2111,7 @@ export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
               </div>
             )}
 
-            {/* 6. PAYMENT SETTINGS & DIAMOND RATE TAB (Embeds PaymentSettings.tsx) */}
+            {/* 6. PAYMENT SETTINGS, TOPUP PACKAGES & DIAMOND RATE TAB (Embeds PaymentSettings.tsx) */}
             {activeTab === 'settings' && (
               <div className="space-y-4 animate-fadeIn">
                 <PaymentSettings
@@ -2111,6 +2120,15 @@ export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
                     setEditableSettings(updated);
                     onUpdateSettings(updated);
                   }}
+                  siteConfig={editableConfig}
+                  onUpdateSiteConfig={(cfg) => {
+                    setEditableConfig(cfg);
+                    onUpdateSiteConfig(cfg);
+                  }}
+                  rechargePackages={rechargePackages}
+                  onUpdateRechargePackages={onUpdateRechargePackages}
+                  developers={developers}
+                  onUpdateDeveloper={onUpdateDeveloper}
                 />
               </div>
             )}

@@ -14,6 +14,7 @@ import {
   BotAutoReply,
   UserSession,
   BookedSlotInfo,
+  RechargePackage,
 } from './types';
 import {
   INITIAL_DEVELOPERS,
@@ -22,6 +23,7 @@ import {
   INITIAL_USERS,
   INITIAL_BOT_REPLIES,
   INITIAL_WITHDRAW_REQUESTS,
+  RECHARGE_PACKAGES,
 } from './data/initialData';
 import { TopBar } from './components/TopBar';
 import { BottomNav } from './components/BottomNav';
@@ -34,9 +36,11 @@ import { MasterAdminPanel } from './components/MasterAdminPanel';
 import { LoginVerification } from './components/LoginVerification';
 import { SellerPortal } from './components/SellerPortal';
 import { EntrancePopupBanner } from './components/EntrancePopupBanner';
+import { IncomingCallModal } from './components/IncomingCallModal';
 import { ToastContainer, ToastMessage } from './components/Toast';
 import { sounds } from './utils/sound';
 import { realtimeBus } from './utils/realtime';
+import { webrtcVoice, CallSessionInfo } from './utils/webrtc';
 import { isOwnerCredentials, OWNER_EMAIL, OWNER_PASSWORD } from './utils/auth';
 
 export default function App() {
@@ -191,6 +195,21 @@ export default function App() {
     return saved ? JSON.parse(saved) : INITIAL_BOT_REPLIES;
   });
 
+  const [rechargePackages, setRechargePackages] = useState<RechargePackage[]>(() => {
+    const saved = localStorage.getItem('recharge_packages');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+    }
+    return RECHARGE_PACKAGES;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('recharge_packages', JSON.stringify(rechargePackages));
+  }, [rechargePackages]);
+
   // UI Flow States
   const [activeDevForChat, setActiveDevForChat] = useState<Developer | null>(null);
   const [selectedDevForHire, setSelectedDevForHire] = useState<Developer | null>(null);
@@ -324,16 +343,21 @@ export default function App() {
     attachment?: ChatMessage['attachment'],
     senderOverride?: 'user' | 'bot' | 'developer' | 'admin'
   ) => {
-    const sender = senderOverride || (isSeller ? 'developer' : isOwner ? 'admin' : 'user');
+    const isSellerAction = senderOverride === 'developer' || currentView === 'seller_portal';
+    const isOwnerAction = senderOverride === 'admin' || (isOwner && currentView === 'admin');
+    const sender = senderOverride || (isOwnerAction ? 'admin' : isSellerAction ? 'developer' : 'user');
+    
+    const senderName =
+      sender === 'admin'
+        ? '👑 ওনার অ্যাডমিন'
+        : sender === 'developer'
+        ? currentSellerDev?.name || activeUser.name || 'হোস্ট সেলার'
+        : activeUser.name;
+
     const newMsg: ChatMessage = {
-      id: Date.now().toString(),
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       sender,
-      senderName:
-        sender === 'admin'
-          ? '👑 ওনার অ্যাডমিন'
-          : sender === 'developer'
-          ? activeUser.name
-          : activeUser.name,
+      senderName,
       text,
       timestamp: new Date().toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' }),
       developerId: devId,
@@ -585,15 +609,16 @@ export default function App() {
   };
 
   // Admin Actions
-  const handleApprovePayment = (reqId: string) => {
+  const handleApprovePayment = (reqId: string, customAmount?: number) => {
     const target = paymentRequests.find((r) => r.id === reqId);
     if (!target || target.status !== 'pending') return;
 
+    const baseDiamonds = customAmount !== undefined && customAmount > 0 ? customAmount : target.amountDiamonds;
     const bonusPercent = siteConfig.freeDiamondsOfferEnabled !== false ? (siteConfig.rechargeBonusPercentage || 0) : 0;
     const flatBonus = siteConfig.freeDiamondsOfferEnabled !== false ? (siteConfig.rechargeFlatBonusDiamonds || 0) : 0;
-    const bonusFromPercent = Math.floor((target.amountDiamonds * bonusPercent) / 100);
+    const bonusFromPercent = Math.floor((baseDiamonds * bonusPercent) / 100);
     const totalBonus = bonusFromPercent + flatBonus;
-    const totalCredited = target.amountDiamonds + totalBonus;
+    const totalCredited = baseDiamonds + totalBonus;
 
     // Credit diamonds to target user
     setUsers((prev) =>
@@ -606,11 +631,11 @@ export default function App() {
 
     // Update status
     setPaymentRequests((prev) =>
-      prev.map((r) => (r.id === reqId ? { ...r, status: 'approved' } : r))
+      prev.map((r) => (r.id === reqId ? { ...r, status: 'approved', amountDiamonds: baseDiamonds } : r))
     );
 
     showToast(
-      `পেমেন্ট অনুমোদিত! +${target.amountDiamonds} 💎 ${totalBonus > 0 ? `(+${totalBonus} 💎 বোনাস)` : ''} (${target.userName}) ওয়ালেটে জমা হয়েছে।`,
+      `পেমেন্ট অনুমোদিত! +${baseDiamonds} 💎 ${totalBonus > 0 ? `(+${totalBonus} 💎 বোনাস)` : ''} (${target.userName}) ওয়ালেটে জমা হয়েছে।`,
       'success'
     );
   };
@@ -755,12 +780,18 @@ export default function App() {
     return `${formatHour(startHour)} - ${formatHour(endHour)}`;
   };
 
-  // Host Time Slot Booking handler
-  const handleBookSlot = (developerId: number, slotNumber: number) => {
+  // Host Time Slot Booking handler with support for custom slots & real-time broadcast
+  const handleBookSlot = (
+    developerId: number,
+    slotNumber: number,
+    customSlotId?: string,
+    customTimeRange?: string,
+    customDiamonds?: number
+  ) => {
     const targetDev = developers.find((d) => d.id === developerId);
     if (!targetDev) return;
 
-    const cost = targetDev.diamondPerHour || 100;
+    const cost = customDiamonds || targetDev.diamondPerHour || 100;
     if (diamonds < cost) {
       showToast('আপনার পর্যাপ্ত ডায়মন্ড নেই! দয়া করে রিচার্জ করুন।', 'error');
       sounds.playError();
@@ -771,7 +802,7 @@ export default function App() {
     const currentBooked = targetDev.bookedHours || 0;
     const maxHrs = targetDev.maxAvailableHours || 10;
 
-    if (currentBooked >= maxHrs) {
+    if (currentBooked >= maxHrs && !customSlotId) {
       showToast('সর্বোচ্চ সময় বুকিং সম্পন্ন হয়েছে! আর কোনো স্লট খালি নেই।', 'info');
       return;
     }
@@ -784,37 +815,90 @@ export default function App() {
     );
 
     // Booked Slot Info with avatar, name, and time range
-    const timeRangeStr = calculateSlotTimeRange(slotNumber);
+    const timeRangeStr = customTimeRange || calculateSlotTimeRange(slotNumber);
+    const newOrderId = Math.floor(10000 + Math.random() * 90000).toString();
+    const nowTimeString = new Date().toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' });
+
     const newBookedSlotInfo: BookedSlotInfo = {
       slotNumber,
       userId: activeUser.id,
       userName: activeUser.name,
-      userAvatar: activeUser.avatar || userSession?.avatar || `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(activeUser.name)}`,
-      bookedAt: new Date().toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' }),
+      userAvatar:
+        activeUser.avatar ||
+        userSession?.avatar ||
+        `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(activeUser.name)}`,
+      bookedAt: nowTimeString,
       timeRange: timeRangeStr,
       diamonds: cost,
     };
 
-    // Increment booked hours and persist booked slot details
-    const newBookedCount = currentBooked + 1;
-    setDevelopers((prev) =>
-      prev.map((d) =>
-        d.id === developerId
-          ? {
-              ...d,
-              bookedHours: newBookedCount,
-              purchasedTime: (d.purchasedTime || 30) + 60,
-              bookedSlots: [
-                ...(d.bookedSlots || []).filter((s) => s.slotNumber !== slotNumber),
-                newBookedSlotInfo,
-              ],
+    // Update customSlots and dailySchedules if present
+    let updatedCustomSlots: DailyTimeSlot[] | undefined = undefined;
+    if (targetDev.customSlots && targetDev.customSlots.length > 0) {
+      updatedCustomSlots = targetDev.customSlots.map((slot) => {
+        if ((customSlotId && slot.id === customSlotId) || (!customSlotId && slot.slotNumber === slotNumber)) {
+          return {
+            ...slot,
+            isBooked: true,
+            bookedByUserId: activeUser.id,
+            bookedByUserName: activeUser.name,
+            bookedByUserAvatar: newBookedSlotInfo.userAvatar,
+            bookedAt: nowTimeString,
+            orderId: newOrderId,
+          };
+        }
+        return slot;
+      });
+    }
+
+    let updatedDailySchedules: DayAvailabilitySchedule[] | undefined = undefined;
+    if (targetDev.dailySchedules && targetDev.dailySchedules.length > 0) {
+      updatedDailySchedules = targetDev.dailySchedules.map((sched) => {
+        if (sched.dateKey === 'today' && sched.customSlots) {
+          const updatedSchedSlots = sched.customSlots.map((slot) => {
+            if ((customSlotId && slot.id === customSlotId) || (!customSlotId && slot.slotNumber === slotNumber)) {
+              return {
+                ...slot,
+                isBooked: true,
+                bookedByUserId: activeUser.id,
+                bookedByUserName: activeUser.name,
+                bookedByUserAvatar: newBookedSlotInfo.userAvatar,
+                bookedAt: nowTimeString,
+                orderId: newOrderId,
+              };
             }
-          : d
-      )
+            return slot;
+          });
+          return { ...sched, customSlots: updatedSchedSlots };
+        }
+        return sched;
+      });
+    }
+
+    const newBookedCount = updatedCustomSlots
+      ? updatedCustomSlots.filter((s) => s.isBooked).length
+      : currentBooked + 1;
+
+    const updatedDev: Developer = {
+      ...targetDev,
+      bookedHours: newBookedCount,
+      purchasedTime: (targetDev.purchasedTime || 30) + 60,
+      customSlots: updatedCustomSlots || targetDev.customSlots,
+      dailySchedules: updatedDailySchedules || targetDev.dailySchedules,
+      bookedSlots: [
+        ...(targetDev.bookedSlots || []).filter((s) => s.slotNumber !== slotNumber),
+        newBookedSlotInfo,
+      ],
+    };
+
+    setDevelopers((prev) =>
+      prev.map((d) => (d.id === developerId ? updatedDev : d))
     );
 
+    // Broadcast live availability change across all open tabs
+    realtimeBus.broadcast('SLOT_AVAILABILITY_UPDATED', updatedDev);
+
     // Create service order for record
-    const newOrderId = Math.floor(10000 + Math.random() * 90000).toString();
     const newOrder: ServiceOrder = {
       id: newOrderId,
       userId: activeUser.id,
@@ -828,12 +912,11 @@ export default function App() {
     };
     setOrders((prev) => [newOrder, ...prev]);
 
-    const nowTime = new Date().toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' });
     const orderChatMsg: ChatMessage = {
       id: `ORD-${Date.now()}`,
       sender: 'bot',
       text: `🎉 অভিনন্দন ${activeUser.name}! আপনি ${targetDev.name}-এর ১ ঘণ্টার লাইভ সেশন (স্লট #${slotNumber}: ${timeRangeStr}) বুক করেছেন।`,
-      timestamp: nowTime,
+      timestamp: nowTimeString,
       developerId: targetDev.id,
       isOrderCard: true,
       orderInfo: {
@@ -847,7 +930,7 @@ export default function App() {
       id: `AUTO-REQ-${Date.now()}`,
       sender: 'user',
       text: 'পার্সোনাল লিংক টা দিন',
-      timestamp: nowTime,
+      timestamp: nowTimeString,
       developerId: targetDev.id,
     };
 
@@ -1155,7 +1238,17 @@ export default function App() {
 
   // Find active seller for seller portal
   const currentSellerDev =
-    developers.find((d) => d.id === userSession?.sellerId || d.name.toLowerCase() === activeUser.name.toLowerCase()) ||
+    developers.find(
+      (d) =>
+        (userSession?.sellerId && d.id === userSession.sellerId) ||
+        (activeUser.sellerId && d.id === activeUser.sellerId) ||
+        (userSession?.username && d.username && d.username.toLowerCase() === userSession.username.toLowerCase()) ||
+        (activeUser.username && d.username && d.username.toLowerCase() === activeUser.username.toLowerCase()) ||
+        (userSession?.phone && d.phone && d.phone === userSession.phone) ||
+        (activeUser.phone && d.phone && d.phone === activeUser.phone) ||
+        (userSession?.name && d.name.toLowerCase() === userSession.name.toLowerCase()) ||
+        (activeUser.name && d.name.toLowerCase() === activeUser.name.toLowerCase())
+    ) ||
     developers[0] ||
     INITIAL_DEVELOPERS[0];
 
@@ -1210,6 +1303,11 @@ export default function App() {
               onImpersonateUser={handleImpersonateUser}
               chatMessages={chatMessages}
               onSendMessage={handleSendMessage}
+              rechargePackages={rechargePackages}
+              onUpdateRechargePackages={(pkgs) => {
+                setRechargePackages(pkgs);
+                showToast('টপ-আপ রিচার্জ প্যাকেজ সংরক্ষিত হয়েছে!', 'success');
+              }}
             />
           ) : (
             <div className="p-6 text-center space-y-4 my-auto">
@@ -1322,6 +1420,7 @@ export default function App() {
                   diamonds={diamonds}
                   paymentRequests={paymentRequests}
                   paymentSettings={paymentSettings}
+                  rechargePackages={rechargePackages}
                   onSubmitPayment={handleSubmitPayment}
                   onOpenAdmin={() => {
                     if (isOwner) {
@@ -1442,6 +1541,11 @@ export default function App() {
                   onImpersonateUser={handleImpersonateUser}
                   chatMessages={chatMessages}
                   onSendMessage={handleSendMessage}
+                  rechargePackages={rechargePackages}
+                  onUpdateRechargePackages={(pkgs) => {
+                    setRechargePackages(pkgs);
+                    showToast('টপ-আপ রিচার্জ প্যাকেজ সংরক্ষিত হয়েছে!', 'success');
+                  }}
                 />
               </div>
             )}
@@ -1475,6 +1579,19 @@ export default function App() {
               onNavigateToRecharge={() => {
                 setCurrentView('profile');
                 showToast('ডায়মন্ড রিচার্জ অপশনে নিয়ে যাওয়া হচ্ছে...', 'info');
+              }}
+            />
+
+            {/* Realtime WebRTC Incoming Call Overlay */}
+            <IncomingCallModal
+              onCallAccepted={(session) => {
+                if (session.targetDeveloperId) {
+                  const dev = developers.find((d) => d.id === session.targetDeveloperId);
+                  if (dev) {
+                    setActiveDevForChat(dev);
+                    setCurrentView('chat');
+                  }
+                }
               }}
             />
           </>

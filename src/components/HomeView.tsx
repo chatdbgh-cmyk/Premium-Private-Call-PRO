@@ -34,7 +34,13 @@ interface HomeViewProps {
   siteConfig?: SiteConfig;
   paymentSettings?: PaymentSettings;
   userDiamonds?: number;
-  onBookSlot?: (developerId: number, slotNumber: number) => void;
+  onBookSlot?: (
+    developerId: number,
+    slotNumber: number,
+    customSlotId?: string,
+    customTimeRange?: string,
+    customDiamonds?: number
+  ) => void;
   onUpdateHostSettings?: (developerId: number, isTimeSaleActive: boolean, maxAvailableHours: number) => void;
   isOwner?: boolean;
   isSeller?: boolean;
@@ -65,6 +71,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
     host: Developer;
     slotNumber: number;
     timeRange: string;
+    price: number;
+    slotId?: string;
   } | null>(null);
 
   const supportPhoneNumber = paymentSettings?.supportPhone || paymentSettings?.bkashNumber || '01700000000';
@@ -102,7 +110,24 @@ export const HomeView: React.FC<HomeViewProps> = ({
     return true;
   });
 
-  const handleSlotClick = (host: Developer, slotIndex: number) => {
+  const handleSlotClick = (
+    host: Developer,
+    slotIndex: number,
+    customSlot?: { id: string; timeRange: string; diamonds?: number; isBooked: boolean; slotNumber: number }
+  ) => {
+    if (customSlot) {
+      if (customSlot.isBooked) return;
+      sounds.playReceive();
+      setBookingModalData({
+        host,
+        slotNumber: customSlot.slotNumber,
+        timeRange: customSlot.timeRange,
+        price: customSlot.diamonds || host.diamondPerHour || 100,
+        slotId: customSlot.id,
+      });
+      return;
+    }
+
     const booked = host.bookedHours || 0;
     if (slotIndex <= booked) {
       // Already booked
@@ -114,13 +139,13 @@ export const HomeView: React.FC<HomeViewProps> = ({
       host,
       slotNumber: slotIndex,
       timeRange: getSlotTimeRange(slotIndex),
+      price: host.diamondPerHour || 100,
     });
   };
 
   const handleConfirmBooking = () => {
     if (!bookingModalData) return;
-    const { host, slotNumber } = bookingModalData;
-    const price = host.diamondPerHour || 100;
+    const { host, slotNumber, timeRange, price, slotId } = bookingModalData;
 
     if (userDiamonds < price) {
       sounds.playError();
@@ -131,7 +156,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
     }
 
     if (onBookSlot) {
-      onBookSlot(host.id, slotNumber);
+      onBookSlot(host.id, slotNumber, slotId, timeRange, price);
       setLastBookedDevId(host.id);
     }
     setBookingModalData(null);
@@ -506,15 +531,20 @@ export const HomeView: React.FC<HomeViewProps> = ({
                   </div>
                 )}
 
-                {/* 10 Hourly Interactive Booking Slots */}
+                {/* Hourly / Custom Interactive Booking Slots */}
                 <div className="space-y-2 pt-1">
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-bold text-slate-200 flex items-center gap-1.5">
                       <Clock className="w-3.5 h-3.5 text-lime-400" />
-                      <span>ঘণ্টা অনুযায়ী স্লট বুকিং (প্রতি ঘণ্টা {pricePerHour} 💎)</span>
+                      <span>
+                        {host.customSlots && host.customSlots.length > 0
+                          ? `দৈনিক নির্ধারিত স্লট (${host.customSlots.length}টি সময়)`
+                          : `ঘণ্টা অনুযায়ী স্লট বুকিং (প্রতি ঘণ্টা ${pricePerHour} 💎)`}
+                      </span>
                     </span>
                     <span className="text-[11px] text-slate-400 font-mono">
-                      বুকড: <strong className="text-lime-400">{bookedHours}</strong> / {maxHours}
+                      বুকড: <strong className="text-lime-400">{bookedHours}</strong> /{' '}
+                      {host.customSlots && host.customSlots.length > 0 ? host.customSlots.length : maxHours}
                     </span>
                   </div>
 
@@ -522,7 +552,67 @@ export const HomeView: React.FC<HomeViewProps> = ({
                     <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-center text-xs text-slate-400">
                       🔒 হোস্ট বর্তমানে নতুন বুকিং নিচ্ছেন না।
                     </div>
+                  ) : host.customSlots && host.customSlots.length > 0 ? (
+                    /* Custom Slots Configured by Seller in Daily Slot Manager */
+                    <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-2">
+                      {host.customSlots.map((cSlot) => {
+                        const isBooked = cSlot.isBooked;
+                        const slotCost = cSlot.diamonds || pricePerHour;
+                        const displayUserName = cSlot.bookedByUserName || 'গ্রাহক বুকড';
+                        const displayUserAvatar =
+                          cSlot.bookedByUserAvatar ||
+                          `https://api.dicebear.com/7.x/adventurer/svg?seed=Booked${cSlot.slotNumber}`;
+
+                        return (
+                          <button
+                            key={cSlot.id}
+                            type="button"
+                            disabled={isBooked}
+                            onClick={() => {
+                              sounds.playClick();
+                              handleSlotClick(host, cSlot.slotNumber, cSlot);
+                            }}
+                            className={`p-2.5 rounded-2xl border text-center flex flex-col items-center justify-between transition-all min-h-[82px] relative overflow-hidden ${
+                              isBooked
+                                ? 'bg-slate-950/95 border-emerald-500/50 text-slate-200 shadow-inner opacity-90'
+                                : 'bg-gradient-to-b from-lime-500/10 via-slate-950 to-emerald-950/40 border-lime-500/40 text-lime-300 hover:border-lime-400 hover:scale-102 shadow-sm font-bold cursor-pointer'
+                            }`}
+                          >
+                            {isBooked ? (
+                              <div className="w-full flex flex-col items-center justify-center gap-1">
+                                <div className="flex items-center justify-center gap-1 w-full text-emerald-400">
+                                  <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                  <span className="text-[10px] font-bold text-slate-200">
+                                    🔒 বুকড
+                                  </span>
+                                </div>
+                                <span className="text-[9px] font-mono text-emerald-300 bg-emerald-950/90 px-1.5 py-0.5 rounded border border-emerald-500/40 whitespace-nowrap">
+                                  {cSlot.timeRange}
+                                </span>
+                                <span className="text-[8px] text-slate-400 truncate max-w-[90px]">
+                                  {displayUserName}
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="w-full flex flex-col items-center justify-center gap-1">
+                                <div className="flex items-center gap-1 text-lime-300">
+                                  <Plus className="w-3.5 h-3.5 text-lime-400 shrink-0" />
+                                  <span className="text-[10px] font-black">স্লট #{cSlot.slotNumber}</span>
+                                </div>
+                                <span className="text-[9px] font-mono text-lime-300 bg-lime-950/80 px-1.5 py-0.5 rounded border border-lime-500/40 whitespace-nowrap">
+                                  {cSlot.timeRange}
+                                </span>
+                                <span className="text-[8px] text-lime-400 font-bold">
+                                  {slotCost} 💎
+                                </span>
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
                   ) : (
+                    /* Default standard hour slots */
                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                       {Array.from({ length: Math.min(maxHours, 10) }).map((_, index) => {
                         const slotNum = index + 1;
@@ -530,13 +620,6 @@ export const HomeView: React.FC<HomeViewProps> = ({
                         const isNextAvailable = slotNum === bookedHours + 1;
                         const slotTimeRange = getSlotTimeRange(slotNum);
                         const bookedInfo = host.bookedSlots?.find((s) => s.slotNumber === slotNum);
-                        const matchedUser = bookedInfo?.userId
-                          ? allUsers.find((u) => u.id === bookedInfo.userId)
-                          : bookedInfo?.userName
-                          ? allUsers.find((u) => u.name.toLowerCase() === bookedInfo.userName.toLowerCase())
-                          : null;
-                        const displayUserAvatar = matchedUser?.avatar || bookedInfo?.userAvatar || `https://api.dicebear.com/7.x/adventurer/svg?seed=Booked${slotNum}`;
-                        const displayUserName = matchedUser?.name || bookedInfo?.userName || 'গ্রাহক বুকড';
 
                         return (
                           <button
@@ -597,9 +680,9 @@ export const HomeView: React.FC<HomeViewProps> = ({
                   )}
 
                   {/* Booking complete banner */}
-                  {bookedHours >= maxHours && isTimeSaleActive && (
+                  {bookedHours >= (host.customSlots && host.customSlots.length > 0 ? host.customSlots.length : maxHours) && isTimeSaleActive && (
                     <div className="text-[11px] text-amber-300 bg-amber-950/40 border border-amber-500/30 rounded-xl p-2 text-center font-medium">
-                      ⚠️ সর্বোচ্চ সময় বুকিং সম্পন্ন হয়েছে! আর কোনো স্লট খালি নেই।
+                      ⚠️ সকল নির্ধারিত সময় স্লট বুকিং সম্পন্ন হয়েছে!
                     </div>
                   )}
 
@@ -786,7 +869,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 <span>প্রয়োজনীয় ডায়মন্ড:</span>
                 <span className="font-mono font-black text-amber-400 flex items-center gap-1">
                   <Gem className="w-3.5 h-3.5 fill-amber-400" />
-                  {bookingModalData.host.diamondPerHour || 100} 💎
+                  {bookingModalData.price} 💎
                 </span>
               </div>
               <div className="flex items-center justify-between text-slate-400 text-[11px]">
@@ -797,14 +880,14 @@ export const HomeView: React.FC<HomeViewProps> = ({
               </div>
               <div className="flex items-center justify-between text-slate-400 text-[11px]">
                 <span>বুকিং পরবর্তী ব্যালেন্স:</span>
-                <span className={`font-mono font-bold ${userDiamonds >= (bookingModalData.host.diamondPerHour || 100) ? 'text-emerald-400' : 'text-rose-400'}`}>
-                  {userDiamonds - (bookingModalData.host.diamondPerHour || 100)} 💎
+                <span className={`font-mono font-bold ${userDiamonds >= bookingModalData.price ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {userDiamonds - bookingModalData.price} 💎
                 </span>
               </div>
             </div>
 
             {/* Action Buttons */}
-            {userDiamonds < (bookingModalData.host.diamondPerHour || 100) ? (
+            {userDiamonds < bookingModalData.price ? (
               <div className="space-y-2">
                 <div className="p-2.5 rounded-xl bg-rose-950/60 border border-rose-500/40 text-center text-xs text-rose-300 font-medium">
                   ⚠️ আপনার একাউন্টে পর্যাপ্ত ডায়মন্ড নেই! রিচার্জ করুন।

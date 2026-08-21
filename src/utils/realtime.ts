@@ -5,17 +5,26 @@ export type RealtimeEventType =
   | 'MESSAGE_STATUS_UPDATE'
   | 'TYPING_START'
   | 'TYPING_STOP'
+  | 'VOICE_CALL_OFFER'
+  | 'VOICE_CALL_ANSWER'
+  | 'VOICE_CALL_ICE_CANDIDATE'
+  | 'VOICE_CALL_ACCEPT'
+  | 'VOICE_CALL_REJECT'
   | 'VOICE_CALL_START'
   | 'VOICE_CALL_END'
+  | 'VOICE_CALL_STATUS'
   | 'PAYMENT_UPDATED'
   | 'ORDER_UPDATED'
-  | 'USER_UPDATED';
+  | 'USER_UPDATED'
+  | 'SLOT_AVAILABILITY_UPDATED'
+  | 'CLIENT_LOCATION_UPDATE';
 
 export interface RealtimeEventPayload {
   type: RealtimeEventType;
   data: any;
   senderId?: string;
   timestamp: number;
+  nonce?: string;
 }
 
 type EventCallback = (payload: RealtimeEventPayload) => void;
@@ -23,7 +32,8 @@ type EventCallback = (payload: RealtimeEventPayload) => void;
 class RealtimeChannelService {
   private channel: BroadcastChannel | null = null;
   private listeners: Set<EventCallback> = new Set();
-  private channelName = 'pts_live_realtime_bus_v1';
+  private channelName = 'pts_live_realtime_bus_v2';
+  private processedEventNonces: Set<string> = new Set();
 
   constructor() {
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
@@ -31,21 +41,21 @@ class RealtimeChannelService {
         this.channel = new BroadcastChannel(this.channelName);
         this.channel.onmessage = (event: MessageEvent<RealtimeEventPayload>) => {
           if (event && event.data) {
-            this.notifyListeners(event.data);
+            this.handleIncomingPayload(event.data);
           }
         };
       } catch (e) {
-        console.warn('BroadcastChannel initialization fallback:', e);
+        console.warn('BroadcastChannel fallback:', e);
       }
     }
 
-    // Fallback: Storage event listener for cross-window sync
+    // Fallback: Storage event listener for cross-window / cross-tab sync
     if (typeof window !== 'undefined') {
       window.addEventListener('storage', (e) => {
-        if (e.key === 'pts_realtime_storage_event' && e.newValue) {
+        if (e.key?.startsWith('pts_realtime_event_packet_') && e.newValue) {
           try {
             const parsed = JSON.parse(e.newValue);
-            this.notifyListeners(parsed);
+            this.handleIncomingPayload(parsed);
           } catch {}
         }
       });
@@ -60,16 +70,25 @@ class RealtimeChannelService {
     };
   }
 
-  // Broadcast event to other tabs and local listeners
+  // Broadcast event to all tabs, windows, and local listeners
   broadcast(type: RealtimeEventType, data: any, senderId?: string) {
+    const nonce = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     const payload: RealtimeEventPayload = {
       type,
       data,
       senderId,
       timestamp: Date.now(),
+      nonce,
     };
 
-    // 1. Send via BroadcastChannel
+    // Mark as processed locally to prevent self-echo loop
+    this.processedEventNonces.add(nonce);
+    if (this.processedEventNonces.size > 300) {
+      const first = Array.from(this.processedEventNonces).slice(0, 75);
+      first.forEach((n) => this.processedEventNonces.delete(n));
+    }
+
+    // 1. BroadcastChannel
     if (this.channel) {
       try {
         this.channel.postMessage(payload);
@@ -78,12 +97,34 @@ class RealtimeChannelService {
       }
     }
 
-    // 2. Storage fallback trigger
+    // 2. Storage Event trigger for cross-tab iframe sync
     try {
-      localStorage.setItem('pts_realtime_storage_event', JSON.stringify(payload));
+      const storageKey = `pts_realtime_event_packet_${Date.now()}`;
+      localStorage.setItem(storageKey, JSON.stringify(payload));
+      setTimeout(() => {
+        try {
+          localStorage.removeItem(storageKey);
+        } catch {}
+      }, 2000);
     } catch {}
 
-    // 3. Notify local listeners in same tab
+    // 3. Notify local listeners in current tab immediately
+    this.notifyListeners(payload);
+  }
+
+  private handleIncomingPayload(payload: RealtimeEventPayload) {
+    if (!payload || !payload.nonce) {
+      this.notifyListeners(payload);
+      return;
+    }
+    if (this.processedEventNonces.has(payload.nonce)) {
+      return;
+    }
+    this.processedEventNonces.add(payload.nonce);
+    if (this.processedEventNonces.size > 300) {
+      const first = Array.from(this.processedEventNonces).slice(0, 75);
+      first.forEach((n) => this.processedEventNonces.delete(n));
+    }
     this.notifyListeners(payload);
   }
 

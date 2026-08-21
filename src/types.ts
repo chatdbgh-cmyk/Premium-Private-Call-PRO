@@ -23,6 +23,32 @@ export interface BookedSlotInfo {
   timeRange: string;
   bookedAt: string;
   diamonds: number;
+  dateKey?: string;
+}
+
+export interface DailyTimeSlot {
+  id: string;
+  slotNumber: number;
+  timeRange: string; // e.g. "10:00 AM - 11:00 AM"
+  startTime?: string;
+  endTime?: string;
+  isBooked: boolean;
+  bookedByUserId?: string;
+  bookedByUserName?: string;
+  bookedByUserAvatar?: string;
+  bookedAt?: string;
+  diamonds: number;
+  orderId?: string;
+  dateKey?: string; // "today", "tomorrow", or "YYYY-MM-DD"
+}
+
+export interface DayAvailabilitySchedule {
+  dateKey: string; // "today", "tomorrow", or "YYYY-MM-DD"
+  dayLabel: string; // "আজকের দিন (Today)", "আগামীকাল (Tomorrow)", etc.
+  totalWorkingHours: number; // e.g. 10 hours today, 6 hours tomorrow
+  isActive: boolean; // whether accepting bookings on this day
+  customSlots?: DailyTimeSlot[];
+  lastResetAt?: string;
 }
 
 export interface Developer {
@@ -54,6 +80,9 @@ export interface Developer {
   diamondPerHour?: number;
   totalEarningsDiamonds?: number;
   bookedSlots?: BookedSlotInfo[];
+  customSlots?: DailyTimeSlot[];
+  dailySchedules?: DayAvailabilitySchedule[];
+  activeDateKey?: string;
 }
 
 export interface ChatMessage {
@@ -62,6 +91,7 @@ export interface ChatMessage {
   senderName?: string;
   text: string;
   timestamp: string;
+  createdAt?: number;
   developerId?: number;
   isOrderCard?: boolean;
   orderInfo?: {
@@ -130,6 +160,8 @@ export interface PaymentSettings {
   upayNumber: string;
   telegramSupportUrl: string;
   ratePerDiamondBdt: number;
+  diamondRateBdt?: number;
+  diamondRateDiamonds?: number;
   supportPhone?: string;
   supportWhatsapp?: string;
 }

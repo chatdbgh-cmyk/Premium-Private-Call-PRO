@@ -133,16 +133,30 @@ export const EntrancePopupBanner: React.FC<EntrancePopupBannerProps> = ({
     setIsVideoMuted(videoRef.current.muted);
   };
 
+  const getYouTubeEmbedUrl = (url?: string): string | null => {
+    if (!url) return null;
+    const match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?|shorts)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
+    if (match && match[1]) {
+      return `https://www.youtube-nocookie.com/embed/${match[1]}?autoplay=1&mute=1&loop=1&playlist=${match[1]}&controls=1`;
+    }
+    return null;
+  };
+
+  const rawMediaUrl = currentBanner?.videoUrl || currentBanner?.image || '';
+  const ytEmbedUrl = getYouTubeEmbedUrl(rawMediaUrl);
+  const isVideoMedia =
+    Boolean(ytEmbedUrl) ||
+    currentBanner?.mediaType === 'video' ||
+    Boolean(currentBanner?.videoUrl) ||
+    rawMediaUrl.startsWith('data:video') ||
+    rawMediaUrl.endsWith('.mp4') ||
+    rawMediaUrl.endsWith('.webm') ||
+    rawMediaUrl.endsWith('.mov') ||
+    rawMediaUrl.endsWith('.ogg');
+
   if (!isEnabled || !hasBanners || !currentBanner) {
     return null;
   }
-
-  const isVideoMedia =
-    currentBanner.mediaType === 'video' ||
-    Boolean(currentBanner.videoUrl) ||
-    currentBanner.image?.startsWith('data:video') ||
-    currentBanner.image?.endsWith('.mp4') ||
-    currentBanner.image?.endsWith('.webm');
 
   return (
     <AnimatePresence>
@@ -180,7 +194,23 @@ export const EntrancePopupBanner: React.FC<EntrancePopupBannerProps> = ({
             {/* Banner Media (Image / Video) with responsive aspect ratio & Carousel navigation */}
             <div className="relative w-full h-48 xs:h-56 sm:h-64 bg-slate-950 overflow-hidden flex items-center justify-center shrink-0">
               <AnimatePresence mode="wait">
-                {isVideoMedia ? (
+                {ytEmbedUrl ? (
+                  <motion.div
+                    key={`yt-${currentBanner.id || currentIndex}`}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="relative w-full h-full"
+                  >
+                    <iframe
+                      src={ytEmbedUrl}
+                      title={currentBanner.title || 'Video Banner'}
+                      className="w-full h-full border-0 pointer-events-auto"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                      allowFullScreen
+                    />
+                  </motion.div>
+                ) : isVideoMedia ? (
                   <div className="relative w-full h-full group/video">
                     <motion.video
                       ref={videoRef}

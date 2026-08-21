@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Store,
   User,
@@ -34,12 +34,33 @@ import {
   MapPin,
   Compass,
   Volume2,
-  VolumeX
+  VolumeX,
+  Play,
+  Pause,
+  Mic,
+  Calendar,
+  CalendarDays,
+  RotateCcw,
+  Unlock,
+  Lock,
+  Plus,
+  Trash2,
+  Save,
+  CheckCircle2,
+  RefreshCw,
+  Sun,
+  Moon,
+  Flame,
+  Layers,
+  Settings2,
 } from 'lucide-react';
-import { Developer, ServiceOrder, ChatMessage, UserAccount, SellerWithdrawRequest } from '../types';
+import { Developer, ServiceOrder, ChatMessage, UserAccount, SellerWithdrawRequest, DailyTimeSlot, DayAvailabilitySchedule } from '../types';
 import { sounds } from '../utils/sound';
 import { LiveLocationModal } from './LiveLocationModal';
 import { locationService } from '../utils/locationService';
+import { webrtcVoice } from '../utils/webrtc';
+import { voiceRecorder } from '../utils/voiceRecorder';
+import { realtimeBus } from '../utils/realtime';
 
 interface SellerPortalProps {
   seller: Developer;
@@ -49,7 +70,7 @@ interface SellerPortalProps {
   withdrawRequests?: SellerWithdrawRequest[];
   onUpdateSellerProfile: (updated: Partial<Developer>) => void;
   onUpdateOrderStatus: (orderId: string, status: ServiceOrder['status'], note?: string) => void;
-  onSendMessage: (text: string, developerId?: number, recipientName?: string) => void;
+  onSendMessage: (text: string, developerId?: number, attachment?: any) => void;
   onRequestWithdraw?: (req: {
     amountDiamonds: number;
     bdtAmount: number;
@@ -73,7 +94,7 @@ export const SellerPortal: React.FC<SellerPortalProps> = ({
   onRequestWithdraw,
   onBackToMarketplace,
 }) => {
-  const [activeTab, setActiveTab] = useState<'profile' | 'orders' | 'chat' | 'earnings'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'slots' | 'orders' | 'chat' | 'earnings'>('profile');
 
   // Profile Editor state
   const [name, setName] = useState(seller.name);
@@ -92,9 +113,161 @@ export const SellerPortal: React.FC<SellerPortalProps> = ({
   const [isPlayingTestVoice, setIsPlayingTestVoice] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
 
+  // === Daily Slot & Availability Manager State ===
+  const [activeScheduleDateKey, setActiveScheduleDateKey] = useState<string>('today');
+  const [isTimeSaleActive, setIsTimeSaleActive] = useState<boolean>(seller.isTimeSaleActive ?? true);
+  const [slotFeedback, setSlotFeedback] = useState<string | null>(null);
+
+  // Helper to generate slots for a day
+  const generateSlotsForDay = (
+    hoursCount: number,
+    startHour24: number = 10,
+    priceDiamonds: number = 100,
+    dateKey: string = 'today'
+  ): DailyTimeSlot[] => {
+    const formatSlotHour = (h: number) => {
+      const period = h >= 12 && h < 24 ? 'PM' : 'AM';
+      const hour12 = h % 12 === 0 ? 12 : h % 12;
+      return `${hour12.toString().padStart(2, '0')}:00 ${period}`;
+    };
+
+    const slots: DailyTimeSlot[] = [];
+    for (let i = 0; i < hoursCount; i++) {
+      const slotStartH = (startHour24 + i) % 24;
+      const slotEndH = (startHour24 + i + 1) % 24;
+      const range = `${formatSlotHour(slotStartH)} - ${formatSlotHour(slotEndH)}`;
+      slots.push({
+        id: `slot_${dateKey}_${i + 1}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        slotNumber: i + 1,
+        timeRange: range,
+        startTime: formatSlotHour(slotStartH),
+        endTime: formatSlotHour(slotEndH),
+        isBooked: false,
+        diamonds: priceDiamonds,
+        dateKey,
+      });
+    }
+    return slots;
+  };
+
+  // Build initial schedules
+  const [schedules, setSchedules] = useState<DayAvailabilitySchedule[]>(() => {
+    if (seller.dailySchedules && seller.dailySchedules.length > 0) {
+      return seller.dailySchedules;
+    }
+    const todayHrs = seller.maxAvailableHours || 10;
+    const rate = seller.diamondPerHour || 100;
+    const initialTodaySlots: DailyTimeSlot[] =
+      seller.customSlots && seller.customSlots.length > 0
+        ? seller.customSlots
+        : generateSlotsForDay(todayHrs, 10, rate, 'today');
+
+    // Attach existing booked slots if any
+    const booked = seller.bookedHours || 0;
+    if (booked > 0 && seller.bookedSlots) {
+      initialTodaySlots.forEach((slot) => {
+        const matchingBooked = seller.bookedSlots?.find((b) => b.slotNumber === slot.slotNumber);
+        if (matchingBooked) {
+          slot.isBooked = true;
+          slot.bookedByUserId = matchingBooked.userId;
+          slot.bookedByUserName = matchingBooked.userName;
+          slot.bookedByUserAvatar = matchingBooked.userAvatar;
+          slot.bookedAt = matchingBooked.bookedAt;
+        } else if (slot.slotNumber <= booked) {
+          slot.isBooked = true;
+          slot.bookedByUserName = 'গ্রাহক বুকড';
+        }
+      });
+    }
+
+    return [
+      {
+        dateKey: 'today',
+        dayLabel: 'আজকের দিন (Today)',
+        totalWorkingHours: todayHrs,
+        isActive: true,
+        customSlots: initialTodaySlots,
+      },
+      {
+        dateKey: 'tomorrow',
+        dayLabel: 'আগামীকাল (Tomorrow)',
+        totalWorkingHours: 6,
+        isActive: true,
+        customSlots: generateSlotsForDay(6, 11, rate, 'tomorrow'),
+      },
+      {
+        dateKey: 'day_after',
+        dayLabel: 'পরবর্তী দিন (Day After)',
+        totalWorkingHours: 8,
+        isActive: true,
+        customSlots: generateSlotsForDay(8, 10, rate, 'day_after'),
+      },
+    ];
+  });
+
+  // Modal State for Custom Slot Creation & Editing
+  const [isAddSlotModalOpen, setIsAddSlotModalOpen] = useState(false);
+  const [newSlotStartTime, setNewSlotStartTime] = useState('08:00 PM');
+  const [newSlotEndTime, setNewSlotEndTime] = useState('09:00 PM');
+  const [newSlotPrice, setNewSlotPrice] = useState('100');
+
+  const [editingSlot, setEditingSlot] = useState<DailyTimeSlot | null>(null);
+  const [editSlotTimeRange, setEditSlotTimeRange] = useState('');
+  const [editSlotPrice, setEditSlotPrice] = useState('100');
+
+  // Sync state whenever seller or sellerAccount changes
+  useEffect(() => {
+    if (seller) {
+      setName(seller.name || '');
+      setUsername(seller.username || sellerAccount?.username || '');
+      setService(seller.service || '');
+      setCategory(seller.category || 'app');
+      setPrice((seller.price || 100).toString());
+      setBio(seller.bio || '');
+      setSkills(seller.skills ? seller.skills.join(', ') : '');
+      setPhone(seller.phone || sellerAccount?.phone || '');
+      setAvatarUrl(seller.avatar || sellerAccount?.avatar || '');
+      setIsOnline(seller.online ?? true);
+      setDiamondPerHour((seller.diamondPerHour || 100).toString());
+      setVoiceIntroText(seller.voiceIntroText || '');
+      setVoiceIntroDuration(seller.voiceIntroDuration || '0:20');
+      setIsTimeSaleActive(seller.isTimeSaleActive ?? true);
+
+      if (seller.dailySchedules && seller.dailySchedules.length > 0) {
+        setSchedules(seller.dailySchedules);
+      }
+
+      if (!withdrawAccountNum) {
+        setWithdrawAccountNum(seller.phone || sellerAccount?.phone || '');
+      }
+    }
+  }, [seller, sellerAccount]);
+
   // Chat state
   const [chatText, setChatText] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+
+  // Seller Voice Note & Audio State
+  const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
+  const [playbackProgress, setPlaybackProgress] = useState(0);
+  const [isRecordingVoice, setIsRecordingVoice] = useState(false);
+  const [recordSeconds, setRecordSeconds] = useState(0);
+  const [liveRecordLevels, setLiveRecordLevels] = useState<number[]>([30, 60, 45, 80, 50, 75, 40, 65]);
+  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const recordWaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Subscribe to audio playback updates
+  useEffect(() => {
+    const unsub = voiceRecorder.onPlaybackChange((activeId, prog) => {
+      setPlayingVoiceId(activeId);
+      setPlaybackProgress(prog);
+    });
+    return () => {
+      unsub();
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      if (recordWaveTimerRef.current) clearInterval(recordWaveTimerRef.current);
+    };
+  }, []);
 
   // Live Location Modal state
   const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
@@ -200,12 +373,327 @@ export const SellerPortal: React.FC<SellerPortalProps> = ({
     }
   };
 
+  const handleTogglePlayVoice = (msgId: string, audioUrl?: string) => {
+    sounds.playClick();
+    if (audioUrl) {
+      voiceRecorder.playVoiceNote(msgId, audioUrl);
+    } else {
+      if (playingVoiceId === msgId) {
+        voiceRecorder.stopPlayback();
+      } else {
+        voiceRecorder.playVoiceNote(msgId, '');
+      }
+    }
+  };
+
+  const handleStartVoiceRecording = async () => {
+    sounds.playVoiceRecord();
+    setIsRecordingVoice(true);
+    setRecordSeconds(0);
+
+    await voiceRecorder.startRecording();
+
+    if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+    recordingTimerRef.current = setInterval(() => {
+      setRecordSeconds((s) => s + 1);
+    }, 1000);
+
+    if (recordWaveTimerRef.current) clearInterval(recordWaveTimerRef.current);
+    recordWaveTimerRef.current = setInterval(() => {
+      setLiveRecordLevels(voiceRecorder.getRecordingLiveLevels());
+    }, 120);
+  };
+
+  const handleCancelVoiceRecording = () => {
+    sounds.playCancel();
+    if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+    if (recordWaveTimerRef.current) clearInterval(recordWaveTimerRef.current);
+    voiceRecorder.cancelRecording();
+    setIsRecordingVoice(false);
+    setRecordSeconds(0);
+  };
+
+  const handleSendVoiceRecording = async () => {
+    if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+    if (recordWaveTimerRef.current) clearInterval(recordWaveTimerRef.current);
+    sounds.playSend();
+
+    const recorded = await voiceRecorder.stopRecording();
+    const duration = recorded.duration || recordSeconds || 1;
+    setIsRecordingVoice(false);
+    setRecordSeconds(0);
+
+    onSendMessage(
+      `🎙️ [${seller.name} - সেলার]: ভয়েস নোট`,
+      seller.id,
+      {
+        type: 'voice',
+        url: recorded.dataUrl,
+        duration,
+        name: `ভয়েস নোট (${duration}s)`,
+      }
+    );
+  };
+
   const handleSendReply = (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatText.trim()) return;
     onSendMessage(`[${seller.name} - সেলার]: ${chatText.trim()}`, seller.id);
     setChatText('');
     sounds.playSuccess();
+  };
+
+  // === Daily Slot & Availability Manager Handlers ===
+  const activeSchedule = schedules.find((s) => s.dateKey === activeScheduleDateKey) || schedules[0];
+  const activeSlots = activeSchedule?.customSlots || [];
+  const bookedSlotsCount = activeSlots.filter((s) => s.isBooked).length;
+  const availableSlotsCount = activeSlots.length - bookedSlotsCount;
+
+  // Change working hours for a specific day schedule
+  const handleUpdateWorkingHours = (dayKey: string, newHours: number) => {
+    const rate = parseInt(diamondPerHour) || 100;
+    const clampedHours = Math.max(1, Math.min(24, newHours));
+    sounds.playClick();
+
+    setSchedules((prev) =>
+      prev.map((s) => {
+        if (s.dateKey !== dayKey) return s;
+        const currentSlots = s.customSlots || [];
+        let updatedSlots: DailyTimeSlot[];
+        if (clampedHours > currentSlots.length) {
+          const additional = generateSlotsForDay(
+            clampedHours - currentSlots.length,
+            10 + currentSlots.length,
+            rate,
+            dayKey
+          );
+          const combined = [...currentSlots, ...additional].map((slot, idx) => ({
+            ...slot,
+            slotNumber: idx + 1,
+          }));
+          updatedSlots = combined;
+        } else {
+          updatedSlots = currentSlots.slice(0, clampedHours);
+        }
+
+        return {
+          ...s,
+          totalWorkingHours: clampedHours,
+          customSlots: updatedSlots,
+        };
+      })
+    );
+
+    setSlotFeedback(`সফলভাবে ${dayKey === 'today' ? 'আজকের' : 'আগামীকালের'} কাজের সময় ${clampedHours} ঘণ্টায় সেট করা হয়েছে।`);
+    setTimeout(() => setSlotFeedback(null), 3000);
+  };
+
+  // Release a specific booked slot
+  const handleReleaseSlot = (slotId: string) => {
+    sounds.playSuccess();
+    setSchedules((prev) =>
+      prev.map((s) => {
+        if (s.dateKey !== activeScheduleDateKey) return s;
+        const updated = (s.customSlots || []).map((slot) => {
+          if (slot.id === slotId) {
+            return {
+              ...slot,
+              isBooked: false,
+              bookedByUserId: undefined,
+              bookedByUserName: undefined,
+              bookedByUserAvatar: undefined,
+              bookedAt: undefined,
+              orderId: undefined,
+            };
+          }
+          return slot;
+        });
+        return { ...s, customSlots: updated };
+      })
+    );
+    setSlotFeedback('স্লটটি সফলভাবে রিলিজ করা হয়েছে এবং কাস্টমারদের জন্য ওপেন করা হয়েছে!');
+    setTimeout(() => setSlotFeedback(null), 3000);
+  };
+
+  // Reset & Release All Booked Slots for active day
+  const handleResetAllSlots = (dayKey: string) => {
+    sounds.playReceive();
+    setSchedules((prev) =>
+      prev.map((s) => {
+        if (s.dateKey !== dayKey) return s;
+        const updated = (s.customSlots || []).map((slot) => ({
+          ...slot,
+          isBooked: false,
+          bookedByUserId: undefined,
+          bookedByUserName: undefined,
+          bookedByUserAvatar: undefined,
+          bookedAt: undefined,
+          orderId: undefined,
+        }));
+        return {
+          ...s,
+          customSlots: updated,
+          lastResetAt: new Date().toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' }),
+        };
+      })
+    );
+    setSlotFeedback('সব স্লট সফলভাবে রিসেট ও রিলিজ করা হয়েছে! সকল স্লট এখন খালি ও বুকিংয়ের জন্য উন্মুক্ত।');
+    setTimeout(() => setSlotFeedback(null), 3000);
+  };
+
+  // Add new custom slot
+  const handleAddNewSlot = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSlotStartTime.trim() || !newSlotEndTime.trim()) return;
+
+    sounds.playSuccess();
+    const priceVal = parseInt(newSlotPrice) || parseInt(diamondPerHour) || 100;
+    const rangeStr = `${newSlotStartTime.trim()} - ${newSlotEndTime.trim()}`;
+
+    setSchedules((prev) =>
+      prev.map((s) => {
+        if (s.dateKey !== activeScheduleDateKey) return s;
+        const current = s.customSlots || [];
+        const nextNum = current.length + 1;
+        const newSlot: DailyTimeSlot = {
+          id: `slot_${activeScheduleDateKey}_custom_${Date.now()}`,
+          slotNumber: nextNum,
+          timeRange: rangeStr,
+          startTime: newSlotStartTime.trim(),
+          endTime: newSlotEndTime.trim(),
+          isBooked: false,
+          diamonds: priceVal,
+          dateKey: activeScheduleDateKey,
+        };
+        return {
+          ...s,
+          totalWorkingHours: current.length + 1,
+          customSlots: [...current, newSlot],
+        };
+      })
+    );
+
+    setIsAddSlotModalOpen(false);
+    setSlotFeedback(`নতুন কাস্টম স্লট (${rangeStr}) সফলভাবে যোগ করা হয়েছে!`);
+    setTimeout(() => setSlotFeedback(null), 3000);
+  };
+
+  // Edit slot time or price
+  const handleSaveEditSlot = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingSlot || !editSlotTimeRange.trim()) return;
+
+    sounds.playSuccess();
+    const priceVal = parseInt(editSlotPrice) || editingSlot.diamonds || 100;
+
+    setSchedules((prev) =>
+      prev.map((s) => {
+        if (s.dateKey !== activeScheduleDateKey) return s;
+        const updated = (s.customSlots || []).map((slot) => {
+          if (slot.id === editingSlot.id) {
+            return {
+              ...slot,
+              timeRange: editSlotTimeRange.trim(),
+              diamonds: priceVal,
+            };
+          }
+          return slot;
+        });
+        return { ...s, customSlots: updated };
+      })
+    );
+
+    setEditingSlot(null);
+    setSlotFeedback('স্লট সফলভাবে এডিট ও আপডেট করা হয়েছে!');
+    setTimeout(() => setSlotFeedback(null), 3000);
+  };
+
+  // Delete a slot
+  const handleDeleteSlot = (slotId: string) => {
+    sounds.playCancel();
+    setSchedules((prev) =>
+      prev.map((s) => {
+        if (s.dateKey !== activeScheduleDateKey) return s;
+        const filtered = (s.customSlots || [])
+          .filter((slot) => slot.id !== slotId)
+          .map((slot, idx) => ({ ...slot, slotNumber: idx + 1 }));
+        return {
+          ...s,
+          totalWorkingHours: filtered.length,
+          customSlots: filtered,
+        };
+      })
+    );
+    setSlotFeedback('স্লটটি মুছে ফেলা হয়েছে।');
+    setTimeout(() => setSlotFeedback(null), 3000);
+  };
+
+  // Generate tomorrow fresh slots
+  const handleGenerateTomorrowFreshSlots = (hours: number = 6) => {
+    sounds.playSuccess();
+    const rate = parseInt(diamondPerHour) || 100;
+    const freshTomorrowSlots = generateSlotsForDay(hours, 11, rate, 'tomorrow');
+
+    setSchedules((prev) => {
+      const exists = prev.some((s) => s.dateKey === 'tomorrow');
+      if (exists) {
+        return prev.map((s) =>
+          s.dateKey === 'tomorrow'
+            ? {
+                ...s,
+                totalWorkingHours: hours,
+                isActive: true,
+                customSlots: freshTomorrowSlots,
+                lastResetAt: new Date().toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' }),
+              }
+            : s
+        );
+      }
+      return [
+        ...prev,
+        {
+          dateKey: 'tomorrow',
+          dayLabel: 'আগামীকাল (Tomorrow)',
+          totalWorkingHours: hours,
+          isActive: true,
+          customSlots: freshTomorrowSlots,
+        },
+      ];
+    });
+
+    setActiveScheduleDateKey('tomorrow');
+    setSlotFeedback(`আগামীকালের জন্য ফ্রেশ ${hours} ঘণ্টার স্লট তৈরি করা হয়েছে!`);
+    setTimeout(() => setSlotFeedback(null), 3000);
+  };
+
+  // Save All Schedules & Broadcast Live
+  const handleSaveAvailabilityAndSync = () => {
+    sounds.playSuccess();
+    const todaySched = schedules.find((s) => s.dateKey === 'today') || schedules[0];
+    const todaySlots = todaySched?.customSlots || [];
+    const bookedCount = todaySlots.filter((s) => s.isBooked).length;
+    const totalHrs = todaySched?.totalWorkingHours || todaySlots.length || 10;
+
+    const updatedData: Partial<Developer> = {
+      dailySchedules: schedules,
+      customSlots: todaySlots,
+      maxAvailableHours: totalHrs,
+      bookedHours: bookedCount,
+      isTimeSaleActive: isTimeSaleActive,
+      diamondPerHour: parseInt(diamondPerHour) || 100,
+    };
+
+    onUpdateSellerProfile(updatedData);
+
+    // Broadcast in real-time
+    realtimeBus.broadcast('SLOT_AVAILABILITY_UPDATED', {
+      id: seller.id,
+      ...seller,
+      ...updatedData,
+    });
+
+    setSlotFeedback('✅ দৈনিক স্লট ও অ্যাভেলেবিলিটি সফলভাবে সেভ হয়েছে এবং কাস্টমারদের জন্য লাইভ করা হয়েছে!');
+    setTimeout(() => setSlotFeedback(null), 3500);
   };
 
   return (
@@ -319,6 +807,22 @@ export const SellerPortal: React.FC<SellerPortalProps> = ({
           >
             <Store className="w-3.5 h-3.5" />
             <span>শপ প্রোফাইল ও সেটিংস</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('slots')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 cursor-pointer ${
+              activeTab === 'slots'
+                ? 'bg-gradient-to-r from-lime-400 to-emerald-400 text-slate-950 shadow-md shadow-lime-500/20'
+                : 'bg-slate-950/60 text-slate-400 hover:text-slate-200 border border-slate-800/80'
+            }`}
+          >
+            <Clock className="w-3.5 h-3.5 text-lime-400" />
+            <span>🕒 দৈনিক স্লট ও সময়</span>
+            <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-slate-900 text-lime-300 font-mono font-bold border border-lime-500/30">
+              {availableSlotsCount} খালি
+            </span>
           </button>
 
           <button
@@ -608,6 +1112,568 @@ export const SellerPortal: React.FC<SellerPortalProps> = ({
         </form>
       )}
 
+      {/* TAB: Daily Slot & Availability Manager */}
+      {activeTab === 'slots' && (
+        <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-4 sm:p-6 shadow-2xl space-y-5">
+          {/* Header & Master Controls */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
+            <div>
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-lime-500/20 text-lime-400 border border-lime-500/40 flex items-center justify-center">
+                  <Clock className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-black text-white flex items-center gap-1.5">
+                    <span>🕒 দৈনিক স্লট ও অ্যাভেলেবিলিটি ম্যানেজার</span>
+                    <span className="text-[10px] bg-lime-500/20 border border-lime-500/40 text-lime-300 px-2 py-0.5 rounded-full font-mono font-bold">
+                      LIVE
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    প্রতিদিনের কাজের সময়সূচি নির্ধারণ করুন, বুকড স্লট রিলিজ ও রিসেট করুন এবং কাস্টম টাইম স্লট ম্যানেজ করুন।
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  sounds.playClick();
+                  setIsTimeSaleActive(!isTimeSaleActive);
+                }}
+                className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border ${
+                  isTimeSaleActive
+                    ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300 shadow-sm shadow-emerald-500/20'
+                    : 'bg-rose-500/20 border-rose-500/50 text-rose-300'
+                }`}
+                title={isTimeSaleActive ? 'বুকিং চালু আছে' : 'বুকিং বন্ধ আছে'}
+              >
+                <span className={`w-2 h-2 rounded-full ${isTimeSaleActive ? 'bg-emerald-400 animate-ping' : 'bg-rose-400'}`}></span>
+                <span>{isTimeSaleActive ? '🟢 বুকিং চালু' : '🔴 বুকিং বন্ধ'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSaveAvailabilityAndSync}
+                className="px-4 py-2 bg-gradient-to-r from-lime-400 via-emerald-400 to-green-500 hover:from-lime-300 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-emerald-500/25 transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>সংরক্ষণ ও লাইভ আপডেট</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Real-time Feedback Toast */}
+          {slotFeedback && (
+            <div className="p-3 bg-gradient-to-r from-lime-950/90 via-emerald-950/80 to-slate-950 border border-lime-500/50 rounded-2xl text-lime-300 text-xs font-bold flex items-center gap-2 animate-fadeIn shadow-md">
+              <CheckCircle2 className="w-4 h-4 text-lime-400 shrink-0" />
+              <span>{slotFeedback}</span>
+            </div>
+          )}
+
+          {/* Day Navigation Selector (আজকের দিন / আগামীকাল / কাস্টম দিন) */}
+          <div className="bg-slate-950/80 p-2 rounded-2xl border border-slate-800 flex items-center gap-2 overflow-x-auto">
+            {schedules.map((schedule) => {
+              const isSelected = schedule.dateKey === activeScheduleDateKey;
+              const schedSlots = schedule.customSlots || [];
+              const bCount = schedSlots.filter((s) => s.isBooked).length;
+              const fCount = schedSlots.length - bCount;
+
+              return (
+                <button
+                  key={schedule.dateKey}
+                  type="button"
+                  onClick={() => {
+                    sounds.playClick();
+                    setActiveScheduleDateKey(schedule.dateKey);
+                  }}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 cursor-pointer ${
+                    isSelected
+                      ? 'bg-gradient-to-r from-lime-400 to-emerald-500 text-slate-950 shadow-md shadow-lime-500/20 font-black'
+                      : 'bg-slate-900/90 text-slate-400 hover:text-slate-200 border border-slate-800'
+                  }`}
+                >
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>{schedule.dayLabel}</span>
+                  <span
+                    className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold ${
+                      isSelected
+                        ? 'bg-slate-950/80 text-lime-300'
+                        : 'bg-slate-800 text-slate-300'
+                    }`}
+                  >
+                    {schedule.totalWorkingHours} ঘণ্টা ({fCount} ফ্রি)
+                  </span>
+                </button>
+              );
+            })}
+
+            <button
+              type="button"
+              onClick={() => handleGenerateTomorrowFreshSlots(6)}
+              className="px-3 py-2 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-cyan-300 transition flex items-center gap-1.5 shrink-0 cursor-pointer ml-auto"
+              title="আগামীকালের জন্য ফ্রেশ ৬ ঘণ্টার স্লট তৈরি করুন"
+            >
+              <CalendarDays className="w-3.5 h-3.5 text-cyan-400" />
+              <span>+ আগামীকালের স্লট তৈরি</span>
+            </button>
+          </div>
+
+          {/* Working Hours & Capacity Controller for the Selected Day */}
+          <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 p-4 sm:p-5 rounded-2xl border border-lime-500/30 space-y-4 shadow-xl">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div>
+                <span className="text-xs font-bold text-lime-400 uppercase tracking-wider block">
+                  ⚙️ {activeSchedule.dayLabel} - কাজের সময় নির্ধারণ
+                </span>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  আজ আপনি কত ঘণ্টা কাজ করবেন? ক্লিক করে মোট কাজের ঘণ্টা নির্ধারণ করুন:
+                </p>
+              </div>
+
+              {/* Working Hours Counter */}
+              <div className="flex items-center gap-2 bg-slate-900 px-3.5 py-1.5 rounded-xl border border-slate-800">
+                <span className="text-xs text-slate-400">নির্ধারিত সময়:</span>
+                <span className="text-base sm:text-lg font-black text-lime-300 font-mono">
+                  {activeSchedule.totalWorkingHours} ঘণ্টা
+                </span>
+              </div>
+            </div>
+
+            {/* Quick Preset Buttons for Daily Working Hours */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[11px] text-slate-400 font-semibold mr-1">দ্রুত নির্বাচন:</span>
+                {[4, 6, 8, 10, 12, 14, 16, 20, 24].map((hrs) => {
+                  const isActive = activeSchedule.totalWorkingHours === hrs;
+                  return (
+                    <button
+                      key={hrs}
+                      type="button"
+                      onClick={() => handleUpdateWorkingHours(activeScheduleDateKey, hrs)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                        isActive
+                          ? 'bg-lime-400 text-slate-950 shadow-md shadow-lime-400/30 font-black scale-105'
+                          : 'bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300'
+                      }`}
+                    >
+                      {hrs} ঘণ্টা
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Range Slider */}
+              <div className="pt-2 flex items-center gap-3">
+                <span className="text-xs text-slate-400 font-mono">১ ঘণ্টা</span>
+                <input
+                  type="range"
+                  min="1"
+                  max="24"
+                  value={activeSchedule.totalWorkingHours}
+                  onChange={(e) =>
+                    handleUpdateWorkingHours(activeScheduleDateKey, parseInt(e.target.value) || 1)
+                  }
+                  className="flex-1 accent-lime-400 h-2 bg-slate-800 rounded-lg cursor-pointer"
+                />
+                <span className="text-xs text-slate-400 font-mono">২৪ ঘণ্টা</span>
+              </div>
+            </div>
+
+            {/* Metric Overview Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2 border-t border-slate-800/80">
+              <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 text-center">
+                <span className="text-[10px] text-slate-400 block font-semibold">মোট সময়</span>
+                <span className="text-sm sm:text-base font-black text-white font-mono mt-0.5 block">
+                  {activeSchedule.totalWorkingHours} ঘণ্টা
+                </span>
+              </div>
+
+              <div className="bg-slate-900/90 p-3 rounded-xl border border-emerald-500/40 text-center">
+                <span className="text-[10px] text-emerald-400 block font-semibold">🔒 বুকড স্লট</span>
+                <span className="text-sm sm:text-base font-black text-emerald-300 font-mono mt-0.5 block">
+                  {bookedSlotsCount} টি
+                </span>
+              </div>
+
+              <div className="bg-slate-900/90 p-3 rounded-xl border border-lime-500/40 text-center">
+                <span className="text-[10px] text-lime-400 block font-semibold">🟢 খালি স্লট</span>
+                <span className="text-sm sm:text-base font-black text-lime-300 font-mono mt-0.5 block">
+                  {availableSlotsCount} টি
+                </span>
+              </div>
+
+              <div className="bg-slate-900/90 p-3 rounded-xl border border-amber-500/40 text-center">
+                <span className="text-[10px] text-amber-400 block font-semibold">💎 ঘণ্টা রেট</span>
+                <span className="text-sm sm:text-base font-black text-amber-300 font-mono mt-0.5 block">
+                  {diamondPerHour} 💎
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Action Toolbar (Reset All Booked Slots, Add Custom Slot, Generate Next Day) */}
+          <div className="flex items-center gap-2 flex-wrap justify-between p-3 bg-slate-950 rounded-2xl border border-slate-800">
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Release & Reset All Booked Slots Button */}
+              <button
+                type="button"
+                onClick={() => handleResetAllSlots(activeScheduleDateKey)}
+                className="px-3.5 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow-md shadow-amber-500/20 transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+                title="বুকিং সম্পন্ন হলে এই দিনের সব স্লট নতুন করে উন্মুক্ত করুন"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>🔄 সকল বুকড স্লট রিলিজ ও রিসেট করুন</span>
+              </button>
+
+              {/* Add Custom Slot Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  sounds.playClick();
+                  setIsAddSlotModalOpen(true);
+                }}
+                className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/40 font-bold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
+              >
+                <Plus className="w-3.5 h-3.5 text-cyan-400" />
+                <span>+ নতুন কাস্টম স্লট যোগ</span>
+              </button>
+            </div>
+
+            <div className="text-right">
+              <span className="text-[11px] text-slate-400 font-mono">
+                {activeSchedule.lastResetAt ? `সর্বশেষ রিসেট: ${activeSchedule.lastResetAt}` : 'রিয়েল-টাইম সিঙ্ক একটিভ'}
+              </span>
+            </div>
+          </div>
+
+          {/* Interactive Slot Grid */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5 text-lime-400" />
+                <span>স্লট তালিকা ও বিস্তারিত নিয়ন্ত্রণ ({activeSlots.length} টি স্লট)</span>
+              </h4>
+              <span className="text-[11px] text-slate-400">
+                যেকোনো বুকড স্লট রিলিজ করতে <strong>"রিলিজ করুন"</strong> চাপুন।
+              </span>
+            </div>
+
+            {activeSlots.length === 0 ? (
+              <div className="text-center py-10 bg-slate-950/60 rounded-2xl border border-slate-800 text-slate-500 text-xs">
+                কোনো স্লট পাওয়া যায়নি। উপরের বাটনে ক্লিক করে কাজের সময় বা নতুন স্লট যোগ করুন।
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {activeSlots.map((slot) => {
+                  return (
+                    <div
+                      key={slot.id}
+                      className={`p-3.5 rounded-2xl border transition relative overflow-hidden flex flex-col justify-between gap-3 ${
+                        slot.isBooked
+                          ? 'bg-gradient-to-br from-slate-950 via-emerald-950/30 to-slate-950 border-emerald-500/50 shadow-md shadow-emerald-500/10'
+                          : 'bg-slate-950/90 border-slate-800 hover:border-slate-700'
+                      }`}
+                    >
+                      {/* Top Slot Header */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-lg bg-slate-900 border border-slate-700 text-slate-300 text-xs font-mono font-bold flex items-center justify-center">
+                            #{slot.slotNumber}
+                          </span>
+                          <div>
+                            <span className="text-xs font-bold text-white block">
+                              {slot.timeRange}
+                            </span>
+                            <span className="text-[10px] text-amber-300 font-mono">
+                              {slot.diamonds || diamondPerHour} 💎 / ঘণ্টা
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Status Badge */}
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                            slot.isBooked
+                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 animate-pulse'
+                              : 'bg-lime-500/20 text-lime-300 border-lime-500/40'
+                          }`}
+                        >
+                          {slot.isBooked ? '🔒 বুকড' : '🟢 খালি'}
+                        </span>
+                      </div>
+
+                      {/* Booked User Info if booked */}
+                      {slot.isBooked && (
+                        <div className="p-2.5 rounded-xl bg-slate-900/90 border border-emerald-500/30 flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <img
+                              src={
+                                slot.bookedByUserAvatar ||
+                                `https://api.dicebear.com/7.x/adventurer/svg?seed=Slot${slot.slotNumber}`
+                              }
+                              alt="Booked user"
+                              className="w-7 h-7 rounded-full bg-slate-800 border border-emerald-400/40 shrink-0"
+                            />
+                            <div className="min-w-0">
+                              <span className="text-xs font-bold text-slate-200 truncate block">
+                                {slot.bookedByUserName || 'গ্রাহক বুকড'}
+                              </span>
+                              <span className="text-[9px] text-slate-400 font-mono">
+                                {slot.bookedAt ? `বুকড সময়: ${slot.bookedAt}` : 'অ্যাক্টিভ সেশন'}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Quick Release Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleReleaseSlot(slot.id)}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-[10px] font-black transition cursor-pointer shadow-sm shrink-0 flex items-center gap-1 active:scale-95"
+                            title="এই স্লটটি রিলিজ করে নতুন কাস্টমারদের জন্য খালি করে দিন"
+                          >
+                            <Unlock className="w-3 h-3" />
+                            <span>রিলিজ</span>
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Bottom Slot Action Buttons */}
+                      <div className="flex items-center justify-between pt-1 border-t border-slate-900">
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              sounds.playClick();
+                              setEditingSlot(slot);
+                              setEditSlotTimeRange(slot.timeRange);
+                              setEditSlotPrice((slot.diamonds || diamondPerHour).toString());
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-cyan-300 border border-slate-800 text-[10px] font-bold transition flex items-center gap-1 cursor-pointer"
+                          >
+                            <Edit3 className="w-3 h-3" />
+                            <span>এডিট</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSlot(slot.id)}
+                            className="px-2 py-1 rounded-lg bg-slate-900 hover:bg-rose-950 text-slate-400 hover:text-rose-300 border border-slate-800 text-[10px] font-bold transition flex items-center gap-1 cursor-pointer"
+                            title="স্লট ডিলিট করুন"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+
+                        {!slot.isBooked && (
+                          <span className="text-[10px] text-lime-400/90 font-mono font-bold">
+                            বুকিংয়ের জন্য রেডি ✓
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Quick Publish CTA Card */}
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/70 via-slate-950 to-teal-950/70 border border-lime-500/40 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-lime-400 text-slate-950 font-black flex items-center justify-center shrink-0 shadow-md shadow-lime-400/30">
+                <CheckCircle2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h5 className="text-xs sm:text-sm font-black text-white">
+                  স্লট পরিবর্তন সম্পন্ন হয়েছে?
+                </h5>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  নিচের বাটনে ক্লিক করে সাথে সাথে কাস্টমারদের জন্য এই পরিবর্তন লাইভ করে দিন।
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSaveAvailabilityAndSync}
+              className="w-full sm:w-auto px-5 py-2.5 bg-gradient-to-r from-lime-400 via-emerald-400 to-green-500 hover:from-lime-300 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-emerald-500/25 transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+            >
+              <Save className="w-4 h-4" />
+              <span>লাইভ পাবলিশ ও সেভ করুন</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 1: Add Custom Slot */}
+      {isAddSlotModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 w-full max-w-md shadow-2xl space-y-4 animate-fadeIn">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                <Plus className="w-4 h-4 text-lime-400" />
+                <span>নতুন কাস্টম টাইম স্লট তৈরি</span>
+              </h4>
+              <button
+                type="button"
+                onClick={() => setIsAddSlotModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddNewSlot} className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs text-slate-300 mb-1">শুরুর সময়:</label>
+                  <input
+                    type="text"
+                    value={newSlotStartTime}
+                    onChange={(e) => setNewSlotStartTime(e.target.value)}
+                    placeholder="e.g. 08:00 PM"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400 font-mono"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-300 mb-1">শেষের সময়:</label>
+                  <input
+                    type="text"
+                    value={newSlotEndTime}
+                    onChange={(e) => setNewSlotEndTime(e.target.value)}
+                    placeholder="e.g. 09:00 PM"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lime-400 font-mono"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Quick Time Preset Pills */}
+              <div>
+                <label className="block text-[11px] text-slate-400 mb-1">দ্রুত সময় নির্বাচন:</label>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {[
+                    ['08:00 PM', '09:00 PM'],
+                    ['09:00 PM', '10:00 PM'],
+                    ['10:00 PM', '11:00 PM'],
+                    ['11:00 PM', '12:00 AM'],
+                  ].map(([start, end], idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => {
+                        setNewSlotStartTime(start);
+                        setNewSlotEndTime(end);
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-[10px] text-slate-300 hover:border-lime-400 hover:text-lime-300 font-mono"
+                    >
+                      {start} - {end}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs text-slate-300 mb-1">ডায়মন্ড রেট (💎):</label>
+                <input
+                  type="number"
+                  min="10"
+                  value={newSlotPrice}
+                  onChange={(e) => setNewSlotPrice(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-amber-300 font-bold focus:outline-none focus:border-lime-400"
+                  required
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddSlotModalOpen(false)}
+                  className="w-1/2 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold"
+                >
+                  বাতিল
+                </button>
+                <button
+                  type="submit"
+                  className="w-1/2 py-2.5 rounded-xl bg-gradient-to-r from-lime-400 to-emerald-500 text-slate-950 text-xs font-black shadow-md shadow-lime-500/20 flex items-center justify-center gap-1"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>স্লট তৈরি করুন</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: Edit Slot Modal */}
+      {editingSlot && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 w-full max-w-md shadow-2xl space-y-4 animate-fadeIn">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                <Edit3 className="w-4 h-4 text-cyan-400" />
+                <span>স্লট #{editingSlot.slotNumber} এডিট ও পরিবর্তন</span>
+              </h4>
+              <button
+                type="button"
+                onClick={() => setEditingSlot(null)}
+                className="text-slate-400 hover:text-white p-1"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditSlot} className="space-y-3">
+              <div>
+                <label className="block text-xs text-slate-300 mb-1">সময়সীমা (Time Range):</label>
+                <input
+                  type="text"
+                  value={editSlotTimeRange}
+                  onChange={(e) => setEditSlotTimeRange(e.target.value)}
+                  placeholder="10:00 AM - 11:00 AM"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-400 font-mono"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-slate-300 mb-1">ডায়মন্ড রেট (💎):</label>
+                <input
+                  type="number"
+                  min="10"
+                  value={editSlotPrice}
+                  onChange={(e) => setEditSlotPrice(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-amber-300 font-bold focus:outline-none focus:border-cyan-400"
+                  required
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingSlot(null)}
+                  className="w-1/2 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold"
+                >
+                  বাতিল
+                </button>
+                <button
+                  type="submit"
+                  className="w-1/2 py-2.5 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 text-xs font-black shadow-md shadow-cyan-500/20 flex items-center justify-center gap-1"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>সংরক্ষণ করুন</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* TAB 2: Customer Orders */}
       {activeTab === 'orders' && (
         <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-4 sm:p-5 shadow-xl space-y-4">
@@ -765,19 +1831,43 @@ export const SellerPortal: React.FC<SellerPortalProps> = ({
                 কাস্টমারদের সাথে সরাসরি কথা বলুন এবং সার্ভিস সংক্রান্ত উত্তর দিন।
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                sounds.playClick();
-                setTrackedCustomerName('অ্যাক্টিভ কাস্টমার');
-                setIsLocationModalOpen(true);
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-lime-500/20 hover:bg-lime-500/30 text-lime-300 border border-lime-500/40 text-xs font-bold transition active:scale-95 cursor-pointer shadow-sm shadow-lime-500/10"
-              title="কাস্টমারের জিপিএস ও লাইভ অবস্থান ট্র্যাক করুন"
-            >
-              <MapPin className="w-3.5 h-3.5 text-lime-400" />
-              <span>📍 কাস্টমার লাইভ লোকেশন</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  sounds.playCallRing();
+                  try {
+                    await webrtcVoice.initiateCall({
+                      targetDeveloperId: seller.id,
+                      targetDeveloperName: seller.name,
+                      callerId: `seller_${seller.id}`,
+                      callerName: `${seller.name} (হোস্ট সেলার)`,
+                    });
+                  } catch (e) {
+                    console.warn('Seller call start:', e);
+                  }
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold transition active:scale-95 cursor-pointer shadow-sm shadow-emerald-500/10"
+                title="কাস্টমারকে সরাসরি WebRTC ভয়েস কল করুন"
+              >
+                <Phone className="w-3.5 h-3.5 text-emerald-400" />
+                <span>📞 ভয়েস কল</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  sounds.playClick();
+                  setTrackedCustomerName('অ্যাক্টিভ কাস্টমার');
+                  setIsLocationModalOpen(true);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-lime-500/20 hover:bg-lime-500/30 text-lime-300 border border-lime-500/40 text-xs font-bold transition active:scale-95 cursor-pointer shadow-sm shadow-lime-500/10"
+                title="কাস্টমারের জিপিএস ও লাইভ অবস্থান ট্র্যাক করুন"
+              >
+                <MapPin className="w-3.5 h-3.5 text-lime-400" />
+                <span>📍 কাস্টমার লোকেশন</span>
+              </button>
+            </div>
           </div>
 
           {/* Messages Container */}
@@ -787,45 +1877,152 @@ export const SellerPortal: React.FC<SellerPortalProps> = ({
                 কোনো মেসেজ হিস্ট্রি নেই। কাস্টমার মেসেজ পাঠালে এখানে দেখতে পাবেন।
               </div>
             ) : (
-              sellerMessages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={`p-2.5 rounded-2xl text-xs max-w-[85%] ${
-                    msg.sender === 'developer' || msg.senderName === seller.name
-                      ? 'bg-cyan-600/30 border border-cyan-500/40 text-cyan-100 ml-auto'
-                      : 'bg-slate-900 border border-slate-800 text-slate-200 mr-auto'
-                  }`}
-                >
-                  <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
-                    <span className="font-bold">
-                      {msg.sender === 'developer' || msg.senderName === seller.name ? 'আপনি (সেলার)' : 'কাস্টমার'}
-                    </span>
-                    <span>{msg.timestamp}</span>
+              sellerMessages.map((msg) => {
+                const isSeller = msg.sender === 'developer' || msg.senderName === seller.name;
+                const hasVoice = msg.attachment?.type === 'voice';
+
+                return (
+                  <div
+                    key={msg.id}
+                    className={`p-2.5 rounded-2xl text-xs max-w-[85%] space-y-1.5 ${
+                      isSeller
+                        ? 'bg-cyan-600/30 border border-cyan-500/40 text-cyan-100 ml-auto'
+                        : 'bg-slate-900 border border-slate-800 text-slate-200 mr-auto'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between text-[10px] text-slate-400 mb-0.5">
+                      <span className="font-bold">
+                        {isSeller ? 'আপনি (সেলার)' : 'কাস্টমার'}
+                      </span>
+                      <span>{msg.timestamp}</span>
+                    </div>
+
+                    {msg.text && <p className="leading-relaxed whitespace-pre-line">{msg.text}</p>}
+
+                    {/* Voice Attachment Bubble */}
+                    {hasVoice && (
+                      <div className="bg-slate-950/90 p-2 rounded-xl border border-cyan-500/30 flex items-center gap-2.5 min-w-[190px] mt-1">
+                        <button
+                          type="button"
+                          onClick={() => handleTogglePlayVoice(msg.id, msg.attachment?.url)}
+                          className={`w-8 h-8 rounded-full ${
+                            playingVoiceId === msg.id
+                              ? 'bg-amber-400 text-slate-950 shadow-md shadow-amber-400/20'
+                              : 'bg-cyan-400 hover:bg-cyan-300 text-slate-950 shadow-md shadow-cyan-400/20'
+                          } flex items-center justify-center transition active:scale-95 cursor-pointer shrink-0`}
+                          title={playingVoiceId === msg.id ? 'পজ করুন' : 'ভয়েস শুনুন'}
+                        >
+                          {playingVoiceId === msg.id ? (
+                            <Pause className="w-3.5 h-3.5" />
+                          ) : (
+                            <Play className="w-3.5 h-3.5 ml-0.5" />
+                          )}
+                        </button>
+
+                        <div className="flex-1 flex flex-col justify-center gap-1">
+                          <div className="flex items-center gap-1 h-5">
+                            {[12, 22, 16, 26, 14, 20, 10, 24].map((h, idx) => (
+                              <span
+                                key={idx}
+                                style={{
+                                  height: `${
+                                    playingVoiceId === msg.id
+                                      ? Math.min(24, Math.max(6, (h * (playbackProgress + 15)) % 26))
+                                      : Math.max(6, h)
+                                  }px`,
+                                }}
+                                className={`w-1 rounded-full transition-all duration-150 ${
+                                  playingVoiceId === msg.id ? 'bg-cyan-400 animate-pulse' : 'bg-slate-600'
+                                }`}
+                              />
+                            ))}
+                          </div>
+                          {playingVoiceId === msg.id && (
+                            <div className="w-full bg-slate-800 h-1 rounded-full overflow-hidden">
+                              <div
+                                className="bg-cyan-400 h-full transition-all duration-100"
+                                style={{ width: `${Math.min(100, playbackProgress)}%` }}
+                              />
+                            </div>
+                          )}
+                        </div>
+
+                        <span className="text-[10px] font-mono text-cyan-300 font-bold shrink-0">
+                          {msg.attachment?.duration || 3}s
+                        </span>
+                      </div>
+                    )}
                   </div>
-                  <p className="leading-relaxed">{msg.text}</p>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
 
-          {/* Message Input */}
-          <form onSubmit={handleSendReply} className="flex items-center gap-2">
-            <input
-              type="text"
-              value={chatText}
-              onChange={(e) => setChatText(e.target.value)}
-              placeholder="কাস্টমারকে উত্তর লিখুন..."
-              className="flex-1 bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none"
-            />
-            <button
-              type="submit"
-              disabled={!chatText.trim()}
-              className="px-4 py-2.5 bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 text-slate-950 font-bold text-xs rounded-xl transition cursor-pointer flex items-center gap-1 shrink-0"
-            >
-              <Send className="w-3.5 h-3.5" />
-              <span>পাঠান</span>
-            </button>
-          </form>
+          {/* Voice Recording Bar or Input */}
+          {isRecordingVoice ? (
+            <div className="bg-slate-950 border border-slate-800 p-2.5 rounded-2xl flex items-center justify-between gap-3 animate-fadeIn">
+              <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-1.5 text-xs text-rose-400 font-bold">
+                  <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping"></span>
+                  <span>রেকর্ড হচ্ছে: {recordSeconds}s</span>
+                </div>
+                <div className="flex items-center gap-1 h-4 px-2 bg-slate-900 rounded-lg">
+                  {liveRecordLevels.map((lvl, i) => (
+                    <span
+                      key={i}
+                      style={{ height: `${Math.max(20, lvl)}%` }}
+                      className="w-1 rounded-full bg-rose-500 transition-all duration-100"
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCancelVoiceRecording}
+                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition cursor-pointer"
+                >
+                  বাতিল
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSendVoiceRecording}
+                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-cyan-400 to-indigo-500 text-slate-950 text-xs font-bold transition flex items-center gap-1 shadow-md shadow-cyan-500/20 cursor-pointer"
+                >
+                  <Send className="w-3 h-3" />
+                  <span>পাঠান</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* Message Input */
+            <form onSubmit={handleSendReply} className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleStartVoiceRecording}
+                className="p-2.5 rounded-xl bg-slate-950 hover:bg-slate-800 text-slate-400 hover:text-cyan-400 border border-slate-800 transition cursor-pointer shrink-0"
+                title="ভয়েস নোট রেকর্ড করে কাস্টমারকে পাঠান"
+              >
+                <Mic className="w-4 h-4" />
+              </button>
+              <input
+                type="text"
+                value={chatText}
+                onChange={(e) => setChatText(e.target.value)}
+                placeholder="কাস্টমারকে উত্তর লিখুন..."
+                className="flex-1 bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none"
+              />
+              <button
+                type="submit"
+                disabled={!chatText.trim()}
+                className="px-4 py-2.5 bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 text-slate-950 font-bold text-xs rounded-xl transition cursor-pointer flex items-center gap-1 shrink-0"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>পাঠান</span>
+              </button>
+            </form>
+          )}
         </div>
       )}
 

@@ -44,6 +44,7 @@ interface ProfileViewProps {
   diamonds: number;
   paymentRequests: PaymentRequest[];
   paymentSettings: PaymentSettings;
+  rechargePackages?: RechargePackage[];
   onSubmitPayment: (data: {
     method: PaymentMethod;
     diamonds: number;
@@ -68,6 +69,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   diamonds,
   paymentRequests,
   paymentSettings,
+  rechargePackages = [],
   onSubmitPayment,
   onOpenAdmin,
   onOpenSellerPortal,
@@ -80,13 +82,27 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   isOwner: isOwnerProp,
   isSeller: isSellerProp,
 }) => {
+  const activePackages = rechargePackages && rechargePackages.length > 0 ? rechargePackages : RECHARGE_PACKAGES;
+
   // Payment states
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>('bKash');
-  const [selectedPackage, setSelectedPackage] = useState<RechargePackage>(RECHARGE_PACKAGES[1]);
-  const [customAmount, setCustomAmount] = useState<string>('300');
+  const [selectedPackage, setSelectedPackage] = useState<RechargePackage>(activePackages[0] || RECHARGE_PACKAGES[0]);
+  const [customAmount, setCustomAmount] = useState<string>(
+    String((activePackages[0]?.diamonds || 100) + (activePackages[0]?.bonus || 0))
+  );
   const [senderPhoneInput, setSenderPhoneInput] = useState<string>('');
   const [trxId, setTrxId] = useState<string>('');
   const [copiedNumber, setCopiedNumber] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (activePackages.length > 0) {
+      const match = activePackages.find((p) => p.id === selectedPackage?.id);
+      if (!match) {
+        setSelectedPackage(activePackages[0]);
+        setCustomAmount(String(activePackages[0].diamonds + (activePackages[0].bonus || 0)));
+      }
+    }
+  }, [activePackages]);
 
   // Edit profile inline state
   const [isEditingProfile, setIsEditingProfile] = useState<boolean>(false);
@@ -140,7 +156,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
   const handlePackageSelect = (pkg: RechargePackage) => {
     setSelectedPackage(pkg);
-    setCustomAmount((pkg.diamonds + pkg.bonus).toString());
+    setCustomAmount((pkg.diamonds + (pkg.bonus || 0)).toString());
   };
 
   const handleProfileSave = (e: React.FormEvent) => {
@@ -161,8 +177,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       return;
     }
 
-    const diamondAmt = parseInt(customAmount) || selectedPackage.diamonds;
-    const bdtAmt = Math.round((diamondAmt / (paymentSettings.diamondRateDiamonds || 100)) * (paymentSettings.diamondRateBdt || 100));
+    const totalDiamondsForPkg = selectedPackage.diamonds + (selectedPackage.bonus || 0);
+    const diamondAmt = parseInt(customAmount) || totalDiamondsForPkg;
+    const bdtAmt = selectedPackage.bdtPrice || Math.round((diamondAmt / (paymentSettings.diamondRateDiamonds || 100)) * (paymentSettings.diamondRateBdt || 100));
 
     const finalTrx = trxId.trim() ? trxId.trim().toUpperCase() : `DIRECT-${Date.now().toString().slice(-6)}`;
 
@@ -455,7 +472,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         <div className="space-y-1.5">
           <label className="text-[11px] font-semibold text-slate-300 block">প্যাকেজ বাছাই করুন:</label>
           <div className="grid grid-cols-3 gap-2">
-            {RECHARGE_PACKAGES.map((pkg) => {
+            {activePackages.map((pkg) => {
               const isSelected = selectedPackage.id === pkg.id;
               return (
                 <button
@@ -474,6 +491,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   <span className="text-[10px] text-slate-400 block font-mono">
                     ৳{pkg.bdtPrice}
                   </span>
+                  {pkg.bonus > 0 && !pkg.badge && (
+                    <span className="text-[8px] bg-emerald-500/20 text-emerald-300 px-1 rounded font-bold mt-0.5 inline-block">
+                      +{pkg.bonus} বোনাস
+                    </span>
+                  )}
                   {pkg.badge && (
                     <span className="text-[8px] bg-emerald-500/20 text-emerald-300 px-1 rounded font-bold mt-0.5 inline-block">
                       {pkg.badge}
