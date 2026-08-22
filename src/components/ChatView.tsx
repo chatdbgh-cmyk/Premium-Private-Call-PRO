@@ -12,7 +12,7 @@ import {
   X,
   Maximize2
 } from 'lucide-react';
-import { ChatMessage, Developer, ServiceOrder } from '../types';
+import { ChatMessage, Developer, ServiceOrder, UserAccount } from '../types';
 import { SellerChatList } from './SellerChatList';
 import { ChatRoom } from './ChatRoom';
 import { sounds } from '../utils/sound';
@@ -32,6 +32,8 @@ interface ChatViewProps {
   onHireDeveloper: (dev: Developer) => void;
   telegramSupportUrl?: string;
   isAdmin?: boolean;
+  currentUser?: UserAccount | null;
+  onOpenProfile?: () => void;
 }
 
 export const ChatView: React.FC<ChatViewProps> = ({
@@ -44,6 +46,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
   onSelectDeveloper,
   onHireDeveloper,
   isAdmin = false,
+  currentUser,
+  onOpenProfile,
 }) => {
   // Support Bot Chat State when activeDeveloper is null and user opens general support
   const [inGeneralSupport, setInGeneralSupport] = useState(false);
@@ -80,6 +84,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
         }}
         onHireDeveloper={onHireDeveloper}
         isAdmin={isAdmin}
+        currentUser={currentUser}
+        onOpenProfile={onOpenProfile}
       />
     );
   }

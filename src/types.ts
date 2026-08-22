@@ -216,6 +216,30 @@ export interface SiteConfig {
   freeDiamondsOfferTitle?: string;
 }
 
+export interface GoogleDriveAccount {
+  email: string;
+  name?: string;
+  avatar?: string;
+  linkedAt: string;
+  autoSyncDrive?: boolean;
+  lastDriveBackup?: string;
+}
+
+export interface FirebaseAccessRequest {
+  id: string;
+  userId: string;
+  userName: string;
+  userPhone?: string;
+  userRole?: 'user' | 'seller' | 'vip' | 'admin' | 'owner';
+  userAvatar?: string;
+  reason?: string;
+  requestedAt: string;
+  status: 'pending' | 'approved' | 'rejected';
+  approvedAt?: string;
+  adminNote?: string;
+  serviceType?: 'calling' | 'storage' | 'all';
+}
+
 export interface UserAccount {
   id: string;
   name: string;
@@ -229,6 +253,9 @@ export interface UserAccount {
   role: 'user' | 'vip' | 'admin' | 'owner' | 'seller';
   sellerId?: number;
   avatar?: string;
+  firebaseAccessGranted?: boolean;
+  firebaseRequestStatus?: 'none' | 'pending' | 'approved' | 'rejected';
+  linkedGoogleAccount?: GoogleDriveAccount;
 }
 
 export interface SellerWithdrawRequest {

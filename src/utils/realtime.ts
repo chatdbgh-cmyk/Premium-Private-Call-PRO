@@ -1,4 +1,4 @@
-import { ChatMessage, ServiceOrder, PaymentRequest, UserAccount } from '../types';
+import { db, COLLECTIONS, collection, doc, setDoc, onSnapshot } from '../firebase';
 
 export type RealtimeEventType =
   | 'NEW_MESSAGE'
@@ -32,8 +32,9 @@ type EventCallback = (payload: RealtimeEventPayload) => void;
 class RealtimeChannelService {
   private channel: BroadcastChannel | null = null;
   private listeners: Set<EventCallback> = new Set();
-  private channelName = 'pts_live_realtime_bus_v2';
+  private channelName = 'pts_live_realtime_bus_v3';
   private processedEventNonces: Set<string> = new Set();
+  private isListeningFirestore = false;
 
   constructor() {
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
@@ -60,6 +61,46 @@ class RealtimeChannelService {
         }
       });
     }
+
+    // Global Multi-device Firestore Cloud Signals listener
+    this.setupFirestoreSignalListener();
+  }
+
+  private setupFirestoreSignalListener() {
+    if (typeof window === 'undefined' || this.isListeningFirestore) return;
+    try {
+      this.isListeningFirestore = true;
+      const signalsCol = collection(db, COLLECTIONS.CALL_SIGNALS);
+      onSnapshot(
+        signalsCol,
+        (snapshot) => {
+          snapshot.docChanges().forEach((change) => {
+            if (change.type === 'added' || change.type === 'modified') {
+              const data = change.doc.data();
+              if (data && data.type && data.nonce) {
+                // Ignore events older than 60 seconds
+                if (data.timestamp && Date.now() - data.timestamp > 60000) {
+                  return;
+                }
+                const payload: RealtimeEventPayload = {
+                  type: data.type as RealtimeEventType,
+                  data: data.data,
+                  senderId: data.senderId,
+                  timestamp: data.timestamp || Date.now(),
+                  nonce: data.nonce,
+                };
+                this.handleIncomingPayload(payload);
+              }
+            }
+          });
+        },
+        (err) => {
+          console.warn('Firestore call signals listener notice:', err);
+        }
+      );
+    } catch (e) {
+      console.warn('Could not setup Firestore signal listener:', e);
+    }
   }
 
   // Subscribe to real-time events
@@ -70,7 +111,7 @@ class RealtimeChannelService {
     };
   }
 
-  // Broadcast event to all tabs, windows, and local listeners
+  // Broadcast event to all devices (via Firestore), tabs, windows, and local listeners
   broadcast(type: RealtimeEventType, data: any, senderId?: string) {
     const nonce = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     const payload: RealtimeEventPayload = {
@@ -83,12 +124,12 @@ class RealtimeChannelService {
 
     // Mark as processed locally to prevent self-echo loop
     this.processedEventNonces.add(nonce);
-    if (this.processedEventNonces.size > 300) {
-      const first = Array.from(this.processedEventNonces).slice(0, 75);
+    if (this.processedEventNonces.size > 500) {
+      const first = Array.from(this.processedEventNonces).slice(0, 100);
       first.forEach((n) => this.processedEventNonces.delete(n));
     }
 
-    // 1. BroadcastChannel
+    // 1. Local BroadcastChannel
     if (this.channel) {
       try {
         this.channel.postMessage(payload);
@@ -97,7 +138,7 @@ class RealtimeChannelService {
       }
     }
 
-    // 2. Storage Event trigger for cross-tab iframe sync
+    // 2. Storage Event trigger for iframe sync
     try {
       const storageKey = `pts_realtime_event_packet_${Date.now()}`;
       localStorage.setItem(storageKey, JSON.stringify(payload));
@@ -108,7 +149,32 @@ class RealtimeChannelService {
       }, 2000);
     } catch {}
 
-    // 3. Notify local listeners in current tab immediately
+    // 3. Cloud Broadcast via Firestore for Call Signals & Key Events (cross-device/cross-phone sync)
+    if (
+      type.startsWith('VOICE_CALL_') ||
+      type.startsWith('TYPING_') ||
+      type === 'PAYMENT_UPDATED' ||
+      type === 'ORDER_UPDATED' ||
+      type === 'SLOT_AVAILABILITY_UPDATED'
+    ) {
+      const docId = data?.callSessionId ? `CALL-${data.callSessionId}` : `SIG-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      try {
+        const sigDoc = doc(db, COLLECTIONS.CALL_SIGNALS, docId);
+        setDoc(
+          sigDoc,
+          {
+            type,
+            data,
+            senderId,
+            timestamp: Date.now(),
+            nonce,
+          },
+          { merge: true }
+        ).catch(() => {});
+      } catch {}
+    }
+
+    // 4. Notify local listeners in current tab immediately
     this.notifyListeners(payload);
   }
 
@@ -121,8 +187,8 @@ class RealtimeChannelService {
       return;
     }
     this.processedEventNonces.add(payload.nonce);
-    if (this.processedEventNonces.size > 300) {
-      const first = Array.from(this.processedEventNonces).slice(0, 75);
+    if (this.processedEventNonces.size > 500) {
+      const first = Array.from(this.processedEventNonces).slice(0, 100);
       first.forEach((n) => this.processedEventNonces.delete(n));
     }
     this.notifyListeners(payload);

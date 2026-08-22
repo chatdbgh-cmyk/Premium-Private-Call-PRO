@@ -53,7 +53,8 @@ import {
   Zap,
   Wallet,
   AlertCircle,
-  Video
+  Video,
+  Flame,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { MeteredVideoModal } from './MeteredVideoModal';
@@ -69,11 +70,13 @@ import {
   ChatMessage,
   SellerWithdrawRequest,
   MarketingBanner,
-  RechargePackage
+  RechargePackage,
+  FirebaseAccessRequest,
 } from '../types';
 import { sounds } from '../utils/sound';
 import { checkAdminAuth } from '../utils/auth';
 import { PaymentSettings } from './PaymentSettings';
+import { firebaseSync } from '../utils/firebaseSync';
 
 interface MasterAdminPanelProps {
   onBackToSite?: () => void;
@@ -114,6 +117,9 @@ interface MasterAdminPanelProps {
   ) => void;
   rechargePackages?: RechargePackage[];
   onUpdateRechargePackages?: (packages: RechargePackage[]) => void;
+  accessRequests?: FirebaseAccessRequest[];
+  onApproveAccessRequest?: (requestId: string, userId: string, adminNote?: string) => void;
+  onRejectAccessRequest?: (requestId: string, userId: string, adminNote?: string) => void;
 }
 
 export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
@@ -150,6 +156,9 @@ export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
   onSendMessage,
   rechargePackages = [],
   onUpdateRechargePackages,
+  accessRequests = [],
+  onApproveAccessRequest,
+  onRejectAccessRequest,
 }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [adminEmail, setAdminEmail] = useState('');
@@ -160,6 +169,7 @@ export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
     | 'overview'
     | 'users'
     | 'payments'
+    | 'access'
     | 'withdrawals'
     | 'services'
     | 'orders'
@@ -201,6 +211,8 @@ export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [paymentFilter, setPaymentFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
   const [withdrawFilter, setWithdrawFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
+  const [accessFilter, setAccessFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
+  const [accessSearchText, setAccessSearchText] = useState('');
   const [copiedWithdrawId, setCopiedWithdrawId] = useState<string | null>(null);
   const [orderFilter, setOrderFilter] = useState<'all' | 'pending' | 'in_progress' | 'completed' | 'cancelled'>('all');
 
@@ -553,6 +565,9 @@ export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
   const totalWithdrawnBdt = approvedWithdrawals.reduce((sum, r) => sum + r.bdtAmount, 0);
   const totalWithdrawnDiamonds = approvedWithdrawals.reduce((sum, r) => sum + r.amountDiamonds, 0);
 
+  const pendingAccessRequests = accessRequests.filter((r) => r.status === 'pending');
+  const approvedAccessRequests = accessRequests.filter((r) => r.status === 'approved');
+
   const activeOrders = orders.filter((o) => o.status === 'in_progress' || o.status === 'pending');
   const completedOrders = orders.filter((o) => o.status === 'completed');
 
@@ -733,6 +748,7 @@ export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
               { id: 'users', label: '👥 কাস্টমার ডাটাবেজ', badge: users.length },
               { id: 'services', label: '🛍️ সেলার তৈরি ও চ্যাট এক্সেস', badge: developers.length },
               { id: 'payments', label: '💎 রিচার্জ পেমেন্ট', badge: pendingRequests.length },
+              { id: 'access', label: '🔥 ফায়ারবেস ও কলিং পারমিশন', badge: pendingAccessRequests.length },
               { id: 'withdrawals', label: '💸 সেলার উইথড্র রিকোয়েস্ট', badge: pendingWithdrawals.length },
               { id: 'orders', label: '📦 অর্ডার কন্ট্রোল ও হিস্ট্রি', badge: activeOrders.length },
               { id: 'livechat', label: '💬 সার্বিক লাইভ চ্যাট', badge: chatMessages.length },
@@ -1597,6 +1613,337 @@ export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
                         </div>
                       ))
                   )}
+                </div>
+              </div>
+            )}
+
+            {/* 1.2 FIREBASE STORAGE & REAL-TIME CALLING PERMISSION TAB */}
+            {activeTab === 'access' && (
+              <div className="space-y-4 animate-fadeIn">
+                {/* Top Metrics Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 shadow-lg">
+                    <div className="flex items-center justify-between text-amber-400 mb-1">
+                      <span className="text-xs font-bold uppercase">পেন্ডিং রিকোয়েস্ট</span>
+                      <Activity className="w-4 h-4" />
+                    </div>
+                    <div className="text-2xl font-black text-amber-300">{pendingAccessRequests.length} টি</div>
+                    <p className="text-[10px] text-slate-400 mt-1">অনুমোদনের অপেক্ষায় আছে</p>
+                  </div>
+
+                  <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 shadow-lg">
+                    <div className="flex items-center justify-between text-emerald-400 mb-1">
+                      <span className="text-xs font-bold uppercase">অনুমোদিত ইউজার</span>
+                      <ShieldCheck className="w-4 h-4" />
+                    </div>
+                    <div className="text-2xl font-black text-emerald-300">
+                      {users.filter((u) => u.firebaseAccessGranted).length} জন
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1">ক্লাউড ও কলিং অ্যাক্টিভ</p>
+                  </div>
+
+                  <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 shadow-lg">
+                    <div className="flex items-center justify-between text-orange-400 mb-1">
+                      <span className="text-xs font-bold uppercase">মোট আবেদন</span>
+                      <Flame className="w-4 h-4" />
+                    </div>
+                    <div className="text-2xl font-black text-orange-300">{accessRequests.length} টি</div>
+                    <p className="text-[10px] text-slate-400 mt-1">ফায়ারবেস এক্সেস হিস্ট্রি</p>
+                  </div>
+
+                  <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 shadow-lg">
+                    <div className="flex items-center justify-between text-cyan-400 mb-1">
+                      <span className="text-xs font-bold uppercase">লোকাল স্টোরেজ</span>
+                      <Users className="w-4 h-4" />
+                    </div>
+                    <div className="text-2xl font-black text-cyan-300">
+                      {users.filter((u) => !u.firebaseAccessGranted).length} জন
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1">ডিফল্ট লোকাল সেফ মোড</p>
+                  </div>
+                </div>
+
+                {/* Filter and Search Controls */}
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
+                  <div className="flex items-center gap-1.5 w-full sm:w-auto overflow-x-auto scrollbar-none">
+                    {(
+                      [
+                        { id: 'pending', label: '⏳ পেন্ডিং', count: pendingAccessRequests.length },
+                        { id: 'approved', label: '✅ অনুমোদিত', count: approvedAccessRequests.length },
+                        { id: 'rejected', label: '❌ বাতিলকৃত', count: accessRequests.filter((r) => r.status === 'rejected').length },
+                        { id: 'all', label: 'সকল রিকোয়েস্ট', count: accessRequests.length },
+                      ] as const
+                    ).map((f) => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => setAccessFilter(f.id)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shrink-0 ${
+                          accessFilter === f.id
+                            ? 'bg-gradient-to-r from-orange-600 to-amber-600 text-white shadow-md'
+                            : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+                        }`}
+                      >
+                        <span>{f.label}</span>
+                        <span className="text-[10px] bg-black/40 px-1.5 py-0.2 rounded-full font-mono">
+                          {f.count}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="w-full sm:w-64 relative">
+                    <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={accessSearchText}
+                      onChange={(e) => setAccessSearchText(e.target.value)}
+                      placeholder="ইউজার আইডি, নাম বা ফোন..."
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-orange-500 font-sans"
+                    />
+                  </div>
+                </div>
+
+                {/* Request Cards List */}
+                <div className="space-y-3">
+                  {accessRequests.filter((req) => {
+                    if (accessFilter !== 'all' && req.status !== accessFilter) return false;
+                    if (accessSearchText.trim()) {
+                      const q = accessSearchText.trim().toLowerCase();
+                      const matchUser =
+                        req.userName.toLowerCase().includes(q) ||
+                        req.userId.toLowerCase().includes(q) ||
+                        (req.userPhone && req.userPhone.includes(q)) ||
+                        (req.reason && req.reason.toLowerCase().includes(q));
+                      if (!matchUser) return false;
+                    }
+                    return true;
+                  }).length === 0 ? (
+                    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center text-slate-400 text-xs">
+                      <ShieldCheck className="w-8 h-8 text-slate-600 mx-auto mb-2" />
+                      <span>কোনো ফায়ারবেস অ্যাক্সেস রিকোয়েস্ট পাওয়া যায়নি।</span>
+                    </div>
+                  ) : (
+                    accessRequests
+                      .filter((req) => {
+                        if (accessFilter !== 'all' && req.status !== accessFilter) return false;
+                        if (accessSearchText.trim()) {
+                          const q = accessSearchText.trim().toLowerCase();
+                          const matchUser =
+                            req.userName.toLowerCase().includes(q) ||
+                            req.userId.toLowerCase().includes(q) ||
+                            (req.userPhone && req.userPhone.includes(q)) ||
+                            (req.reason && req.reason.toLowerCase().includes(q));
+                          if (!matchUser) return false;
+                        }
+                        return true;
+                      })
+                      .map((req) => (
+                        <div
+                          key={req.id}
+                          className="bg-slate-900 border border-slate-800 hover:border-orange-500/30 rounded-2xl p-4 space-y-3 shadow-lg transition"
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
+                            <div className="flex items-center gap-3">
+                              <img
+                                src={
+                                  req.userAvatar ||
+                                  `https://api.dicebear.com/7.x/identicon/svg?seed=${req.userId}`
+                                }
+                                alt={req.userName}
+                                className="w-10 h-10 rounded-xl object-cover border border-slate-700 shrink-0"
+                              />
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-bold text-slate-100">{req.userName}</span>
+                                  <span className="text-[10px] bg-slate-800 text-cyan-300 font-mono px-2 py-0.2 rounded border border-slate-700">
+                                    {req.userId}
+                                  </span>
+                                  <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.2 rounded font-bold uppercase">
+                                    {req.userRole || 'User'}
+                                  </span>
+                                </div>
+                                <p className="text-[10px] text-slate-400 mt-0.5">
+                                  মোবাইল: <span className="font-mono text-slate-300">{req.userPhone || 'N/A'}</span> • আবেদনের সময়: <span className="font-mono text-slate-300">{req.requestedAt}</span>
+                                </p>
+                              </div>
+                            </div>
+
+                            <div>
+                              <span
+                                className={`px-2.5 py-1 rounded-full text-[11px] font-bold inline-block ${
+                                  req.status === 'approved'
+                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                    : req.status === 'rejected'
+                                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                                    : 'bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse'
+                                }`}
+                              >
+                                {req.status === 'approved'
+                                  ? '✅ অনুমোদিত (Approved)'
+                                  : req.status === 'rejected'
+                                  ? '❌ বাতিল (Rejected)'
+                                  : '⏳ অপেক্ষমাণ (Pending)'}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Reason note */}
+                          <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 flex items-start gap-2 text-xs text-slate-300">
+                            <Flame className="w-4 h-4 text-orange-400 shrink-0 mt-0.5" />
+                            <div>
+                              <span className="text-[10px] text-slate-500 font-bold block uppercase">অনুরোধের কারণ ও নোট:</span>
+                              <p className="text-xs text-slate-200 mt-0.5">{req.reason || 'রিয়েল-টাইম কলিং ও ক্লাউড স্টোরেজ পারমিশন'}</p>
+                              {req.adminNote && (
+                                <p className="text-[11px] text-amber-400 mt-1">অ্যাডমিন নোট: {req.adminNote}</p>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Action Controls */}
+                          <div className="flex items-center justify-between pt-1">
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (confirm('আপনি কি এই রিকোয়েস্ট রেকর্ড মুছে ফেলতে চান?')) {
+                                  await firebaseSync.deleteAccessRequest(req.id);
+                                  sounds.playCancel();
+                                }
+                              }}
+                              className="text-[10px] text-slate-500 hover:text-rose-400 flex items-center gap-1 transition"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              <span>রেকর্ড ডিলিট</span>
+                            </button>
+
+                            <div className="flex items-center gap-2">
+                              {req.status !== 'rejected' && (
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    sounds.playClick();
+                                    if (onRejectAccessRequest) {
+                                      onRejectAccessRequest(req.id, req.userId);
+                                    } else {
+                                      await firebaseSync.rejectAccessRequest(req.id, req.userId);
+                                      onUpdateUser(req.userId, {
+                                        firebaseAccessGranted: false,
+                                        firebaseRequestStatus: 'rejected',
+                                      });
+                                    }
+                                    sounds.playCancel();
+                                    alert(`❌ ${req.userName} এর ফায়ারবেস অ্যাক্সেস বাতিল করা হয়েছে।`);
+                                  }}
+                                  className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                  <span>বাতিল (Reject)</span>
+                                </button>
+                              )}
+
+                              {req.status !== 'approved' && (
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    sounds.playClick();
+                                    if (onApproveAccessRequest) {
+                                      onApproveAccessRequest(req.id, req.userId);
+                                    } else {
+                                      await firebaseSync.approveAccessRequest(req.id, req.userId);
+                                      onUpdateUser(req.userId, {
+                                        firebaseAccessGranted: true,
+                                        firebaseRequestStatus: 'approved',
+                                      });
+                                    }
+                                    sounds.playSuccess();
+                                    confetti({ particleCount: 35, spread: 60 });
+                                    alert(`🎉 ${req.userName} এর জন্য ফায়ারবেস ক্লাউড ও রিয়েল-টাইম কলিং সফলভাবে অনুমোদন দেওয়া হয়েছে!`);
+                                  }}
+                                  className="px-4 py-1.5 bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-emerald-500/20 transition active:scale-95 cursor-pointer flex items-center gap-1.5"
+                                >
+                                  <Check className="w-4 h-4 stroke-[3]" />
+                                  <span>অনুমোদন করুন (Approve)</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                  )}
+                </div>
+
+                {/* Direct User Firebase Access Granter / Revoker Table */}
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-xl mt-4">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-cyan-400" />
+                      <h4 className="text-xs font-bold text-slate-100">
+                        ⚡ সকল ইউজারের জন্য সরাসরি ফায়ারবেস ও কলিং পারমিশন টগল (Direct Override)
+                      </h4>
+                    </div>
+                  </div>
+
+                  <div className="divide-y divide-slate-800/60 max-h-72 overflow-y-auto pr-1">
+                    {users.map((u) => (
+                      <div key={u.id} className="py-2.5 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <img
+                            src={u.avatar || `https://api.dicebear.com/7.x/identicon/svg?seed=${u.id}`}
+                            alt={u.name}
+                            className="w-7 h-7 rounded-lg object-cover border border-slate-800 shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <span className="text-xs font-bold text-slate-200 block truncate">{u.name}</span>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              {u.id} • {u.phone || 'No phone'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              u.role === 'owner' || u.id === 'usr-owner-001'
+                                ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                                : u.firebaseAccessGranted
+                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                : 'bg-slate-800 text-slate-400'
+                            }`}
+                          >
+                            {u.role === 'owner' || u.id === 'usr-owner-001'
+                              ? '👑 ওনার (Full)'
+                              : u.firebaseAccessGranted
+                              ? '✅ অ্যাক্টিভ'
+                              : '🔒 লোকাল (ডিফল্ট)'}
+                          </span>
+
+                          {u.role !== 'owner' && u.id !== 'usr-owner-001' && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nextState = !u.firebaseAccessGranted;
+                                onUpdateUser(u.id, {
+                                  firebaseAccessGranted: nextState,
+                                  firebaseRequestStatus: nextState ? 'approved' : 'none',
+                                });
+                                sounds.playClick();
+                                if (nextState) {
+                                  sounds.playSuccess();
+                                }
+                              }}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                                u.firebaseAccessGranted
+                                  ? 'bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40'
+                                  : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40'
+                              }`}
+                            >
+                              {u.firebaseAccessGranted ? 'Revoke (বন্ধ করুন)' : 'Grant (অনুমোদন দিন)'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
@@ -3190,6 +3537,38 @@ export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
                   </div>
 
                   <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+                    {/* Cloud Snapshot to Firestore */}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await firebaseSync.createCloudBackup({
+                            creatorName: 'ওনার অ্যাডমিন (USP labon)',
+                            note: 'ম্যানুয়াল ওনার ব্যাকআপ পয়েন্ট',
+                            users,
+                            developers,
+                            messages: chatMessages || [],
+                            payments: paymentRequests,
+                            orders,
+                            withdraws: withdrawRequests || [],
+                            siteConfig: editableConfig,
+                            paymentSettings,
+                            botReplies,
+                            rechargePackages: rechargePackages || [],
+                          });
+                          sounds.playSuccess();
+                          confetti({ particleCount: 45, spread: 60 });
+                          alert('☁️ ফায়ারবেস ক্লাউডে সম্পূর্ণ ডাটাবেজ ব্যাকআপ স্ন্যাপশট সংরক্ষিত হয়েছে!');
+                        } catch (err) {
+                          alert('ক্লাউড ব্যাকআপে ত্রুটি: ' + String(err));
+                        }
+                      }}
+                      className="w-full sm:w-auto py-3 px-4 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-cyan-600/20 transition active:scale-98 cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <ShieldCheck className="w-4 h-4 text-cyan-200" />
+                      <span>☁️ ক্লাউড ব্যাকআপ স্ন্যাপশট নিন</span>
+                    </button>
+
                     {/* Export / Download Backup */}
                     <button
                       type="button"
@@ -3243,17 +3622,25 @@ export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
                           const file = e.target.files?.[0];
                           if (!file) return;
                           const reader = new FileReader();
-                          reader.onload = (event) => {
+                          reader.onload = async (event) => {
                             try {
                               const parsed = JSON.parse(event.target?.result as string);
                               if (parsed && typeof parsed === 'object') {
-                                if (parsed.siteConfig) onUpdateSiteConfig(parsed.siteConfig);
-                                if (parsed.paymentSettings) onUpdateSettings(parsed.paymentSettings);
+                                if (parsed.siteConfig) {
+                                  onUpdateSiteConfig(parsed.siteConfig);
+                                  firebaseSync.saveSiteConfig(parsed.siteConfig);
+                                }
+                                if (parsed.paymentSettings) {
+                                  onUpdateSettings(parsed.paymentSettings);
+                                  firebaseSync.savePaymentSettings(parsed.paymentSettings);
+                                }
                                 if (parsed.developers && Array.isArray(parsed.developers)) {
                                   localStorage.setItem('pts_developers_v2', JSON.stringify(parsed.developers));
+                                  firebaseSync.saveDevelopers(parsed.developers);
                                 }
                                 if (parsed.users && Array.isArray(parsed.users)) {
                                   localStorage.setItem('pts_users_v2', JSON.stringify(parsed.users));
+                                  firebaseSync.saveUsers(parsed.users);
                                 }
                                 if (parsed.paymentRequests && Array.isArray(parsed.paymentRequests)) {
                                   localStorage.setItem('pts_payment_requests_v2', JSON.stringify(parsed.paymentRequests));
@@ -3262,7 +3649,7 @@ export const MasterAdminPanel: React.FC<MasterAdminPanelProps> = ({
                                   localStorage.setItem('pts_orders_v2', JSON.stringify(parsed.orders));
                                 }
                                 sounds.playSuccess();
-                                alert('🎉 ব্যাকআপ ডাটা সফলভাবে রিস্টোর করা হয়েছে! পরিবর্তনের জন্য পেজ রিফ্রেশ হতে পারে।');
+                                alert('🎉 ব্যাকআপ ডাটা সফলভাবে রিস্টোর ও ক্লাউডে সিঙ্ক করা হয়েছে! পরিবর্তনের জন্য পেজ রিফ্রেশ হতে পারে।');
                                 window.location.reload();
                               }
                             } catch (err) {

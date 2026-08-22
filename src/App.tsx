@@ -17,6 +17,7 @@ import {
   DailyTimeSlot,
   DayAvailabilitySchedule,
   RechargePackage,
+  FirebaseAccessRequest,
 } from './types';
 import {
   INITIAL_DEVELOPERS,
@@ -43,6 +44,7 @@ import { Crown, Sparkles } from 'lucide-react';
 import { ToastContainer, ToastMessage } from './components/Toast';
 import { sounds } from './utils/sound';
 import { realtimeBus } from './utils/realtime';
+import { firebaseSync } from './utils/firebaseSync';
 import { webrtcVoice, CallSessionInfo } from './utils/webrtc';
 import { isOwnerCredentials, OWNER_EMAIL, OWNER_PASSWORD } from './utils/auth';
 
@@ -201,9 +203,18 @@ export default function App() {
     return RECHARGE_PACKAGES;
   });
 
+  const [accessRequests, setAccessRequests] = useState<FirebaseAccessRequest[]>(() => {
+    const saved = localStorage.getItem('firebase_access_requests');
+    return saved ? JSON.parse(saved) : [];
+  });
+
   useEffect(() => {
     localStorage.setItem('recharge_packages', JSON.stringify(rechargePackages));
   }, [rechargePackages]);
+
+  useEffect(() => {
+    localStorage.setItem('firebase_access_requests', JSON.stringify(accessRequests));
+  }, [accessRequests]);
 
   // UI Flow States
   const [activeDevForChat, setActiveDevForChat] = useState<Developer | null>(null);
@@ -212,7 +223,79 @@ export default function App() {
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  // Sync state to localStorage
+  // 1. Initialize Firebase Firestore Cloud Sync
+  useEffect(() => {
+    firebaseSync.init({
+      onUsersChange: (newUsers) => {
+        if (newUsers && newUsers.length > 0) {
+          setUsers(newUsers);
+          localStorage.setItem('site_users', JSON.stringify(newUsers));
+        }
+      },
+      onDevelopersChange: (newDevs) => {
+        if (newDevs && newDevs.length > 0) {
+          setDevelopers(newDevs);
+          localStorage.setItem('developers_data', JSON.stringify(newDevs));
+        }
+      },
+      onMessagesChange: (newMsgs) => {
+        if (newMsgs && newMsgs.length > 0) {
+          setChatMessages(newMsgs);
+          localStorage.setItem('chat_messages', JSON.stringify(newMsgs));
+        }
+      },
+      onPaymentsChange: (newReqs) => {
+        if (newReqs) {
+          setPaymentRequests(newReqs);
+          localStorage.setItem('payment_requests', JSON.stringify(newReqs));
+        }
+      },
+      onOrdersChange: (newOrders) => {
+        if (newOrders) {
+          setOrders(newOrders);
+          localStorage.setItem('service_orders', JSON.stringify(newOrders));
+        }
+      },
+      onWithdrawsChange: (newWithdraws) => {
+        if (newWithdraws) {
+          setWithdrawRequests(newWithdraws);
+          localStorage.setItem('seller_withdraw_requests', JSON.stringify(newWithdraws));
+        }
+      },
+      onSiteConfigChange: (newConfig) => {
+        if (newConfig) {
+          setSiteConfig(newConfig);
+          localStorage.setItem('site_config', JSON.stringify(newConfig));
+        }
+      },
+      onPaymentSettingsChange: (newSettings) => {
+        if (newSettings) {
+          setPaymentSettings(newSettings);
+          localStorage.setItem('payment_settings', JSON.stringify(newSettings));
+        }
+      },
+      onBotRepliesChange: (newReplies) => {
+        if (newReplies && newReplies.length > 0) {
+          setBotReplies(newReplies);
+          localStorage.setItem('bot_replies', JSON.stringify(newReplies));
+        }
+      },
+      onRechargePackagesChange: (newPkgs) => {
+        if (newPkgs && newPkgs.length > 0) {
+          setRechargePackages(newPkgs);
+          localStorage.setItem('recharge_packages', JSON.stringify(newPkgs));
+        }
+      },
+      onAccessRequestsChange: (newReqs) => {
+        if (newReqs) {
+          setAccessRequests(newReqs);
+          localStorage.setItem('firebase_access_requests', JSON.stringify(newReqs));
+        }
+      },
+    });
+  }, []);
+
+  // Sync state to localStorage & Firebase fallback
   useEffect(() => {
     localStorage.setItem('site_users', JSON.stringify(users));
   }, [users]);
@@ -360,6 +443,7 @@ export default function App() {
     };
 
     setChatMessages((prev) => [...prev, newMsg]);
+    firebaseSync.sendChatMessage(newMsg);
     realtimeBus.broadcast('NEW_MESSAGE', newMsg);
 
     // If sent by regular user, trigger simulated live response
@@ -416,6 +500,7 @@ export default function App() {
         };
 
         setChatMessages((prev) => [...prev, botMsg]);
+        firebaseSync.sendChatMessage(botMsg);
         realtimeBus.broadcast('TYPING_STOP', { developerId: devId });
         realtimeBus.broadcast('NEW_MESSAGE', botMsg);
       }, 1100);
@@ -439,11 +524,13 @@ export default function App() {
     }
 
     // Deduct exact calculated diamonds from active user
+    const updatedDiamonds = Math.max(0, activeUser.diamonds - cost);
     setUsers((prev) =>
       prev.map((u) =>
-        u.id === activeUser.id ? { ...u, diamonds: Math.max(0, u.diamonds - cost) } : u
+        u.id === activeUser.id ? { ...u, diamonds: updatedDiamonds } : u
       )
     );
+    firebaseSync.saveUser({ ...activeUser, diamonds: updatedDiamonds });
 
     const formattedDuration = durationText || `${Math.floor(durationMinutes / 60)} ঘণ্টা ${durationMinutes % 60 ? `${durationMinutes % 60} মিনিট` : ''}`;
 
@@ -467,6 +554,7 @@ export default function App() {
     };
 
     setOrders((prev) => [newOrder, ...prev]);
+    firebaseSync.saveOrder(newOrder);
     setSelectedDevForHire(null);
 
     const nowTime = new Date().toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' });
@@ -496,6 +584,8 @@ export default function App() {
     };
 
     setChatMessages((prev) => [...prev, orderChatMsg, userAutoMsg]);
+    firebaseSync.sendChatMessage(orderChatMsg);
+    firebaseSync.sendChatMessage(userAutoMsg);
 
     // 3. Immediately switch to host chatbox so user sees the message
     setActiveDevForChat(developer);
@@ -511,6 +601,7 @@ export default function App() {
         developerId: developer.id,
       };
       setChatMessages((prev) => [...prev, hostReply]);
+      firebaseSync.sendChatMessage(hostReply);
       sounds.playReceive();
     }, 1400);
 
@@ -546,6 +637,7 @@ export default function App() {
     };
 
     setPaymentRequests((prev) => [newReq, ...prev]);
+    firebaseSync.savePaymentRequest(newReq);
     showToast(`পেমেন্ট রিকোয়েস্ট পাঠানো হয়েছে (${activeUser.name})! অ্যাডমিন দ্রুত ভেরিফাই করবেন।`, 'success');
     sounds.playDiamond();
 
@@ -557,6 +649,7 @@ export default function App() {
       timestamp: new Date().toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' }),
     };
     setChatMessages((prev) => [...prev, rechargeSubmitMsg]);
+    firebaseSync.sendChatMessage(rechargeSubmitMsg);
     realtimeBus.broadcast('NEW_MESSAGE', rechargeSubmitMsg);
     realtimeBus.broadcast('PAYMENT_UPDATED', { type: 'SUBMITTED', requestId: newReq.id });
   };
@@ -572,7 +665,9 @@ export default function App() {
 
     if (existing) {
       if (password && !existing.password) {
-        setUsers((prev) => prev.map((u) => (u.id === existing.id ? { ...u, password } : u)));
+        const updated = { ...existing, password };
+        setUsers((prev) => prev.map((u) => (u.id === existing.id ? updated : u)));
+        firebaseSync.saveUser(updated);
       }
       setCurrentUserId(existing.id);
       showToast(`স্বাগতম ${existing.name}! প্রোফাইলে লগইন করা হয়েছে।`, 'success');
@@ -599,6 +694,7 @@ export default function App() {
     };
 
     setUsers((prev) => [newUser, ...prev]);
+    firebaseSync.saveUser(newUser);
     setCurrentUserId(newId);
     showToast(
       `রেজিস্ট্রেশন সফল হয়েছে! ${welcomeBonus > 0 ? `🎉 +${welcomeBonus} 💎 ফ্রি ওয়েলকাম বোনাস যুক্ত হয়েছে!` : ''}`,
@@ -608,9 +704,12 @@ export default function App() {
   };
 
   const handleUpdateBio = (userId: string, bio: string) => {
-    setUsers((prev) =>
-      prev.map((u) => (u.id === userId ? { ...u, bio } : u))
-    );
+    const target = users.find((u) => u.id === userId);
+    if (target) {
+      const updated = { ...target, bio };
+      setUsers((prev) => prev.map((u) => (u.id === userId ? updated : u)));
+      firebaseSync.saveUser(updated);
+    }
     showToast('বায়ো সফলভাবে আপডেট করা হয়েছে!', 'success');
     sounds.playReceive();
   };
@@ -629,17 +728,22 @@ export default function App() {
 
     // Credit diamonds to target user
     setUsers((prev) =>
-      prev.map((u) =>
-        u.id === target.userId || u.name === target.userName
-          ? { ...u, diamonds: u.diamonds + totalCredited }
-          : u
-      )
+      prev.map((u) => {
+        if (u.id === target.userId || u.name === target.userName) {
+          const updated = { ...u, diamonds: u.diamonds + totalCredited };
+          firebaseSync.saveUser(updated);
+          return updated;
+        }
+        return u;
+      })
     );
 
     // Update status
+    const updatedReq: PaymentRequest = { ...target, status: 'approved', amountDiamonds: baseDiamonds };
     setPaymentRequests((prev) =>
-      prev.map((r) => (r.id === reqId ? { ...r, status: 'approved', amountDiamonds: baseDiamonds } : r))
+      prev.map((r) => (r.id === reqId ? updatedReq : r))
     );
+    firebaseSync.savePaymentRequest(updatedReq);
 
     // Send instant system message to Chat Inbox & notify user in real-time
     const rechargeApprovedMsg: ChatMessage = {
@@ -650,6 +754,7 @@ export default function App() {
       timestamp: new Date().toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' }),
     };
     setChatMessages((prev) => [...prev, rechargeApprovedMsg]);
+    firebaseSync.sendChatMessage(rechargeApprovedMsg);
     realtimeBus.broadcast('NEW_MESSAGE', rechargeApprovedMsg);
     realtimeBus.broadcast('PAYMENT_UPDATED', { type: 'APPROVED', requestId: reqId, userId: target.userId, amount: totalCredited });
 
@@ -660,9 +765,14 @@ export default function App() {
   };
 
   const handleRejectPayment = (reqId: string) => {
-    setPaymentRequests((prev) =>
-      prev.map((r) => (r.id === reqId ? { ...r, status: 'rejected' } : r))
-    );
+    const target = paymentRequests.find((r) => r.id === reqId);
+    if (target) {
+      const updatedReq: PaymentRequest = { ...target, status: 'rejected' };
+      setPaymentRequests((prev) =>
+        prev.map((r) => (r.id === reqId ? updatedReq : r))
+      );
+      firebaseSync.savePaymentRequest(updatedReq);
+    }
     showToast('পেমেন্ট রিকোয়েস্ট বাতিল করা হয়েছে।', 'error');
   };
 
@@ -692,6 +802,7 @@ export default function App() {
     };
 
     setWithdrawRequests((prev) => [newReq, ...prev]);
+    firebaseSync.saveWithdrawRequest(newReq);
     showToast(`💎 ${data.amountDiamonds} ডায়মন্ড (৳ ${data.bdtAmount}) উইথড্র রিকোয়েস্ট ওনারের কাছে পাঠানো হয়েছে!`, 'success');
   };
 
@@ -699,19 +810,18 @@ export default function App() {
     const target = withdrawRequests.find((r) => r.id === reqId);
     if (!target || target.status !== 'pending') return;
 
+    const updated: SellerWithdrawRequest = {
+      ...target,
+      status: 'approved',
+      adminTrxId: adminTrxId || `TX-${Date.now().toString().slice(-8)}`,
+      adminNote: note,
+      processedAt: new Date().toLocaleString('bn-BD'),
+    };
+
     setWithdrawRequests((prev) =>
-      prev.map((r) =>
-        r.id === reqId
-          ? {
-              ...r,
-              status: 'approved',
-              adminTrxId: adminTrxId || `TX-${Date.now().toString().slice(-8)}`,
-              adminNote: note,
-              processedAt: new Date().toLocaleString('bn-BD'),
-            }
-          : r
-      )
+      prev.map((r) => (r.id === reqId ? updated : r))
     );
+    firebaseSync.saveWithdrawRequest(updated);
 
     showToast(`✅ উইথড্র #${reqId} অনুমোদিত ও ${target.bdtAmount} টাকা পেইড মার্ক করা হয়েছে!`, 'success');
   };
@@ -720,18 +830,17 @@ export default function App() {
     const target = withdrawRequests.find((r) => r.id === reqId);
     if (!target) return;
 
+    const updated: SellerWithdrawRequest = {
+      ...target,
+      status: 'rejected',
+      adminNote: note || 'ওনার কর্তৃক বাতিল ও রিফান্ড করা হয়েছে',
+      processedAt: new Date().toLocaleString('bn-BD'),
+    };
+
     setWithdrawRequests((prev) =>
-      prev.map((r) =>
-        r.id === reqId
-          ? {
-              ...r,
-              status: 'rejected',
-              adminNote: note || 'ওনার কর্তৃক বাতিল ও রিফান্ড করা হয়েছে',
-              processedAt: new Date().toLocaleString('bn-BD'),
-            }
-          : r
-      )
+      prev.map((r) => (r.id === reqId ? updated : r))
     );
+    firebaseSync.saveWithdrawRequest(updated);
 
     showToast(`উইথড্র রিকোয়েস্ট #${reqId} বাতিল ও রিফান্ড করা হয়েছে।`, 'error');
   };
@@ -739,7 +848,14 @@ export default function App() {
   const handleAddDiamondsDirectly = (amount: number, targetId?: string) => {
     const destinationId = targetId || activeUser.id;
     setUsers((prev) =>
-      prev.map((u) => (u.id === destinationId ? { ...u, diamonds: u.diamonds + amount } : u))
+      prev.map((u) => {
+        if (u.id === destinationId) {
+          const updated = { ...u, diamonds: u.diamonds + amount };
+          firebaseSync.saveUser(updated);
+          return updated;
+        }
+        return u;
+      })
     );
     const targetName = users.find((u) => u.id === destinationId)?.name || 'ইউজার';
     showToast(`অ্যাডমিন থেকে +${amount} 💎 (${targetName}) উপহার যুক্ত হয়েছে!`, 'success');
@@ -913,6 +1029,7 @@ export default function App() {
     setDevelopers((prev) =>
       prev.map((d) => (d.id === developerId ? updatedDev : d))
     );
+    firebaseSync.saveDeveloper(updatedDev);
 
     // Broadcast live availability change across all open tabs
     realtimeBus.broadcast('SLOT_AVAILABILITY_UPDATED', updatedDev);
@@ -930,6 +1047,7 @@ export default function App() {
       requirements: `স্লট #${slotNumber} (${timeRangeStr}) বুকিং সফল। রুম লিঙ্ক: ${targetDev.externalChatUrl || targetDev.telegram || 'https://t.me/alex_voice_chat'}`,
     };
     setOrders((prev) => [newOrder, ...prev]);
+    firebaseSync.saveOrder(newOrder);
 
     const orderChatMsg: ChatMessage = {
       id: `ORD-${Date.now()}`,
@@ -954,6 +1072,8 @@ export default function App() {
     };
 
     setChatMessages((prev) => [...prev, orderChatMsg, userAutoMsg]);
+    firebaseSync.sendChatMessage(orderChatMsg);
+    firebaseSync.sendChatMessage(userAutoMsg);
 
     // Open developer chatroom immediately
     setActiveDevForChat(targetDev);
@@ -969,13 +1089,14 @@ export default function App() {
 
   // Host settings updater
   const handleUpdateHostSettings = (developerId: number, isTimeSaleActive: boolean, maxAvailableHours: number) => {
-    setDevelopers((prev) =>
-      prev.map((d) =>
-        d.id === developerId
-          ? { ...d, isTimeSaleActive, maxAvailableHours: Math.max(1, maxAvailableHours) }
-          : d
-      )
-    );
+    const target = developers.find((d) => d.id === developerId);
+    if (target) {
+      const updated = { ...target, isTimeSaleActive, maxAvailableHours: Math.max(1, maxAvailableHours) };
+      setDevelopers((prev) =>
+        prev.map((d) => (d.id === developerId ? updated : d))
+      );
+      firebaseSync.saveDeveloper(updated);
+    }
     showToast('হোস্ট সেটিংস সফলভাবে আপডেট হয়েছে!', 'success');
   };
 
@@ -988,25 +1109,37 @@ export default function App() {
       online: true,
     };
     setDevelopers((prev) => [newDev, ...prev]);
+    firebaseSync.saveDeveloper(newDev);
     showToast('নতুন সার্ভিস সফলভাবে যুক্ত হয়েছে!', 'success');
   };
 
   const handleUpdateDeveloper = (id: number, updated: Partial<Developer>) => {
-    setDevelopers((prev) =>
-      prev.map((d) => (d.id === id ? { ...d, ...updated } : d))
-    );
+    const target = developers.find((d) => d.id === id);
+    if (target) {
+      const updatedDev = { ...target, ...updated };
+      setDevelopers((prev) =>
+        prev.map((d) => (d.id === id ? updatedDev : d))
+      );
+      firebaseSync.saveDeveloper(updatedDev);
+    }
     showToast('সার্ভিস তথ্য আপডেট হয়েছে!', 'success');
   };
 
   const handleDeleteDeveloper = (devId: number) => {
     setDevelopers((prev) => prev.filter((d) => d.id !== devId));
+    firebaseSync.deleteDeveloper(devId);
     showToast('সার্ভিস ডিলিট করা হয়েছে।', 'info');
   };
 
   const handleUpdateOrderStatus = (orderId: string, status: ServiceOrder['status'], adminNote?: string) => {
-    setOrders((prev) =>
-      prev.map((o) => (o.id === orderId ? { ...o, status, ...(adminNote ? { adminNote } : {}) } : o))
-    );
+    const target = orders.find((o) => o.id === orderId);
+    if (target) {
+      const updatedOrder: ServiceOrder = { ...target, status, ...(adminNote ? { adminNote } : {}) };
+      setOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? updatedOrder : o))
+      );
+      firebaseSync.saveOrder(updatedOrder);
+    }
     showToast(`অর্ডার #${orderId} এর স্ট্যাটাস আপডেট করা হয়েছে!`, 'info');
   };
 
@@ -1015,23 +1148,33 @@ export default function App() {
     if (!targetOrder) return;
 
     setUsers((prev) =>
-      prev.map((u) =>
-        u.id === targetOrder.userId || u.id === activeUser.id
-          ? { ...u, diamonds: u.diamonds + targetOrder.priceDiamonds }
-          : u
-      )
+      prev.map((u) => {
+        if (u.id === targetOrder.userId || u.id === activeUser.id) {
+          const updated = { ...u, diamonds: u.diamonds + targetOrder.priceDiamonds };
+          firebaseSync.saveUser(updated);
+          return updated;
+        }
+        return u;
+      })
     );
 
+    const updatedOrder: ServiceOrder = { ...targetOrder, status: 'cancelled' };
     setOrders((prev) =>
-      prev.map((o) => (o.id === orderId ? { ...o, status: 'cancelled' } : o))
+      prev.map((o) => (o.id === orderId ? updatedOrder : o))
     );
+    firebaseSync.saveOrder(updatedOrder);
     showToast(`অর্ডার #${orderId} রিফান্ড করা হয়েছে (+${targetOrder.priceDiamonds} 💎)`, 'success');
   };
 
   const handleCompleteOrderByUser = (orderId: string) => {
-    setOrders((prev) =>
-      prev.map((o) => (o.id === orderId ? { ...o, status: 'completed' } : o))
-    );
+    const targetOrder = orders.find((o) => o.id === orderId);
+    if (targetOrder) {
+      const updatedOrder: ServiceOrder = { ...targetOrder, status: 'completed' };
+      setOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? updatedOrder : o))
+      );
+      firebaseSync.saveOrder(updatedOrder);
+    }
     sounds.playSuccess();
     try {
       confetti({ particleCount: 50, spread: 60 });
@@ -1041,19 +1184,26 @@ export default function App() {
 
   const handleDeleteOrderByUser = (orderId: string) => {
     setOrders((prev) => prev.filter((o) => o.id !== orderId));
+    firebaseSync.deleteOrder(orderId);
     showToast(`অর্ডার #${orderId} ডিলিট করা হয়েছে।`, 'info');
   };
 
   // User management
   const handleUpdateUser = (targetId: string, updated: Partial<UserAccount>) => {
-    setUsers((prev) =>
-      prev.map((u) => (u.id === targetId ? { ...u, ...updated } : u))
-    );
+    const target = users.find((u) => u.id === targetId);
+    if (target) {
+      const updatedUser = { ...target, ...updated };
+      setUsers((prev) =>
+        prev.map((u) => (u.id === targetId ? updatedUser : u))
+      );
+      firebaseSync.saveUser(updatedUser);
+    }
     showToast('ইউজার প্রোফাইল আপডেট করা হয়েছে!', 'success');
   };
 
   const handleAddUser = (newUser: UserAccount) => {
     setUsers((prev) => [newUser, ...prev]);
+    firebaseSync.saveUser(newUser);
     showToast(`নতুন ইউজার ${newUser.name} যোগ করা হয়েছে!`, 'success');
   };
 
@@ -1064,17 +1214,24 @@ export default function App() {
       id: `rep-${Date.now()}`,
     };
     setBotReplies((prev) => [...prev, newRule]);
+    firebaseSync.saveBotReply(newRule);
     showToast('নতুন অটো-রিপ্লাই নিয়ম যোগ হয়েছে!', 'success');
   };
 
   const handleToggleBotReply = (id: string) => {
-    setBotReplies((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, enabled: !r.enabled } : r))
-    );
+    const target = botReplies.find((r) => r.id === id);
+    if (target) {
+      const updated = { ...target, enabled: !target.enabled };
+      setBotReplies((prev) =>
+        prev.map((r) => (r.id === id ? updated : r))
+      );
+      firebaseSync.saveBotReply(updated);
+    }
   };
 
   const handleDeleteBotReply = (id: string) => {
     setBotReplies((prev) => prev.filter((r) => r.id !== id));
+    firebaseSync.deleteBotReply(id);
     showToast('অটো-রিপ্লাই নিয়ম মুছে ফেলা হয়েছে!', 'info');
   };
 
@@ -1206,6 +1363,7 @@ export default function App() {
     };
 
     setDevelopers((prev) => [newDev, ...prev]);
+    firebaseSync.saveDeveloper(newDev);
 
     // Create matching User Account
     const newUserId = `USR-SELLER-${newDevId}`;
@@ -1225,6 +1383,7 @@ export default function App() {
     };
 
     setUsers((prev) => [newUserAcc, ...prev]);
+    firebaseSync.saveUser(newUserAcc);
     setCurrentUserId(newUserId);
     showToast(`নতুন সেলার শপ সফলভাবে তৈরি হয়েছে: ${newDev.name}!`, 'success');
     setCurrentView('seller_portal');
@@ -1235,21 +1394,29 @@ export default function App() {
     const activeSellerId = userSession?.sellerId || developers[0]?.id;
     if (!activeSellerId) return;
 
-    setDevelopers((prev) =>
-      prev.map((d) => (d.id === activeSellerId ? { ...d, ...updated } : d))
-    );
+    const currentDev = developers.find((d) => d.id === activeSellerId);
+    if (currentDev) {
+      const updatedDev = { ...currentDev, ...updated };
+      setDevelopers((prev) =>
+        prev.map((d) => (d.id === activeSellerId ? updatedDev : d))
+      );
+      firebaseSync.saveDeveloper(updatedDev);
+    }
 
     if (updated.name || updated.avatar) {
       setUsers((prev) =>
-        prev.map((u) =>
-          u.sellerId === activeSellerId
-            ? {
-                ...u,
-                ...(updated.name ? { name: updated.name } : {}),
-                ...(updated.avatar ? { avatar: updated.avatar } : {}),
-              }
-            : u
-        )
+        prev.map((u) => {
+          if (u.sellerId === activeSellerId) {
+            const updatedUser = {
+              ...u,
+              ...(updated.name ? { name: updated.name } : {}),
+              ...(updated.avatar ? { avatar: updated.avatar } : {}),
+            };
+            firebaseSync.saveUser(updatedUser);
+            return updatedUser;
+          }
+          return u;
+        })
       );
     }
     showToast('আপনার সেলার শপ প্রোফাইল সফলভাবে আপডেট হয়েছে!', 'success');
@@ -1355,11 +1522,13 @@ export default function App() {
               paymentSettings={paymentSettings}
               onUpdateSettings={(newSettings) => {
                 setPaymentSettings(newSettings);
+                firebaseSync.savePaymentSettings(newSettings);
                 showToast('পেমেন্ট ও সাপোর্ট সেটিংস সংরক্ষিত হয়েছে!', 'success');
               }}
               siteConfig={siteConfig}
               onUpdateSiteConfig={(newConfig) => {
                 setSiteConfig(newConfig);
+                firebaseSync.saveSiteConfig(newConfig);
                 showToast('ওয়েবসাইট কনফিগারেশন সংরক্ষিত হয়েছে!', 'success');
               }}
               users={users}
@@ -1380,6 +1549,7 @@ export default function App() {
               rechargePackages={rechargePackages}
               onUpdateRechargePackages={(pkgs) => {
                 setRechargePackages(pkgs);
+                firebaseSync.saveRechargePackages(pkgs);
                 showToast('টপ-আপ রিচার্জ প্যাকেজ সংরক্ষিত হয়েছে!', 'success');
               }}
             />
@@ -1454,6 +1624,8 @@ export default function App() {
                   onHireDeveloper={(dev) => setSelectedDevForHire(dev)}
                   telegramSupportUrl={paymentSettings.telegramSupportUrl}
                   isAdmin={isOwner}
+                  currentUser={activeUser}
+                  onOpenProfile={() => setCurrentView('profile')}
                 />
               )}
 
@@ -1596,11 +1768,13 @@ export default function App() {
                   paymentSettings={paymentSettings}
                   onUpdateSettings={(newSettings) => {
                     setPaymentSettings(newSettings);
+                    firebaseSync.savePaymentSettings(newSettings);
                     showToast('পেমেন্ট ও সাপোর্ট সেটিংস সংরক্ষিত হয়েছে!', 'success');
                   }}
                   siteConfig={siteConfig}
                   onUpdateSiteConfig={(newConfig) => {
                     setSiteConfig(newConfig);
+                    firebaseSync.saveSiteConfig(newConfig);
                     showToast('ওয়েবসাইট কনফিগারেশন সংরক্ষিত হয়েছে!', 'success');
                   }}
                   users={users}
@@ -1621,8 +1795,10 @@ export default function App() {
                   rechargePackages={rechargePackages}
                   onUpdateRechargePackages={(pkgs) => {
                     setRechargePackages(pkgs);
+                    firebaseSync.saveRechargePackages(pkgs);
                     showToast('টপ-আপ রিচার্জ প্যাকেজ সংরক্ষিত হয়েছে!', 'success');
                   }}
+                  accessRequests={accessRequests}
                 />
               </div>
             )}

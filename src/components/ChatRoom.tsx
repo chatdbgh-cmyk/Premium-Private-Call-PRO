@@ -28,8 +28,15 @@ import {
   Check,
   MapPin,
   Compass,
+  Lock,
+  Key,
+  HardDrive,
+  Cloud,
+  AlertCircle,
+  ExternalLink,
+  Video,
 } from 'lucide-react';
-import { ChatMessage, Developer } from '../types';
+import { ChatMessage, Developer, UserAccount, FirebaseAccessRequest } from '../types';
 import { sounds } from '../utils/sound';
 import { realtimeBus } from '../utils/realtime';
 import { webrtcVoice } from '../utils/webrtc';
@@ -38,7 +45,7 @@ import { locationService } from '../utils/locationService';
 import { voiceRecorder } from '../utils/voiceRecorder';
 import { LiveLocationModal } from './LiveLocationModal';
 import { MeteredVideoModal } from './MeteredVideoModal';
-import { Video } from 'lucide-react';
+import { firebaseSync } from '../utils/firebaseSync';
 
 interface ChatRoomProps {
   activeSeller: Developer;
@@ -52,6 +59,8 @@ interface ChatRoomProps {
   onBackToList: () => void;
   onHireDeveloper: (developer: Developer) => void;
   isAdmin?: boolean;
+  currentUser?: UserAccount | null;
+  onOpenProfile?: () => void;
 }
 
 export const ChatRoom: React.FC<ChatRoomProps> = ({
@@ -62,11 +71,31 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
   onBackToList,
   onHireDeveloper,
   isAdmin = false,
+  currentUser,
+  onOpenProfile,
 }) => {
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Access Permission State for Firebase Cloud Storage & Calling
+  const hasFirebaseAccess = isAdmin || currentUser?.role === 'owner' || !!currentUser?.firebaseAccessGranted;
+  
+  // Check if current user is seller/developer, owner or admin (Location is restricted to sellers/owners only)
+  const isSellerOrAdmin = Boolean(
+    isAdmin ||
+    currentUser?.role === 'owner' ||
+    currentUser?.role === 'developer' ||
+    currentUser?.role === 'seller' ||
+    currentUser?.id === 'usr-owner-001' ||
+    currentUser?.id === 'USR-OWNER'
+  );
+
+  const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
+  const [accessReason, setAccessReason] = useState('');
+  const [isSubmittingAccess, setIsSubmittingAccess] = useState(false);
+  const [accessSuccessMessage, setAccessSuccessMessage] = useState<string | null>(null);
 
   // Live Voice Call state
   const [isCallModalOpen, setIsCallModalOpen] = useState(false);
@@ -196,7 +225,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Start Voice Call (WebRTC Peer Connection & Audio Mesh & GPS Location Sync)
+  // Start Voice Call (WebRTC Peer Connection & Audio Mesh & Free Real-Time Signaling)
   const handleStartCall = async () => {
     sounds.playCallRing();
     setIsCallModalOpen(true);
@@ -207,13 +236,48 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
       await webrtcVoice.initiateCall({
         targetDeveloperId: activeSeller.id,
         targetDeveloperName: activeSeller.name,
-        callerId: 'user_active',
-        callerName: 'কাস্টমার',
+        callerId: currentUser?.id || 'user_active',
+        callerName: currentUser?.name || 'কাস্টমার',
       });
       sounds.playCallConnected();
     } catch (e) {
       console.warn('WebRTC start error:', e);
       setCallStatus('connected');
+    }
+  };
+
+  // Open Video Call (Metered HD Video & WebRTC - Always Free & Open)
+  const handleOpenVideoCall = () => {
+    sounds.playClick();
+    setIsMeteredVideoOpen(true);
+  };
+
+  // Submit Cloud Storage Access Request from Chat
+  const handleSubmitAccessFromChat = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!currentUser) {
+      alert('অনুরোধ পাঠাতে অনুগ্রহ করে প্রথমে লগইন করুন।');
+      return;
+    }
+    setIsSubmittingAccess(true);
+    try {
+      const newReq: FirebaseAccessRequest = {
+        id: `REQ-${Date.now()}`,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userPhone: currentUser.phone,
+        reason: accessReason.trim() || 'ফায়ারবেস ক্লাউড স্টোরেজে ভারী ফাইল ব্যাকআপ ও সিঙ্ক পারমিশন চাই।',
+        requestedAt: new Date().toLocaleString('bn-BD'),
+        status: 'pending',
+        serviceType: 'storage',
+      };
+      await firebaseSync.saveAccessRequest(newReq);
+      setAccessSuccessMessage('✅ ওনার অ্যাডমিনের কাছে ক্লাউড স্টোরেজের অনুমোদনের রিকোয়েস্ট সফলভাবে পাঠানো হয়েছে!');
+      sounds.playSuccess();
+    } catch (err) {
+      console.warn('Error sending access request:', err);
+    } finally {
+      setIsSubmittingAccess(false);
     }
   };
 
@@ -403,6 +467,157 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
         </div>
       )}
 
+      {/* Access Permission Modal for Firebase Cloud Storage */}
+      {isAccessModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
+          <div className="relative max-w-md w-full bg-slate-900 border border-slate-700/80 rounded-3xl p-5 shadow-2xl space-y-4">
+            <button
+              onClick={() => {
+                setIsAccessModalOpen(false);
+                setAccessSuccessMessage(null);
+              }}
+              className="absolute top-4 right-4 p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-full transition cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            {/* Header */}
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                <Cloud className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-sm sm:text-base text-white">
+                  ফায়ারবেস ক্লাউড স্টোরেজ পারমিশন
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  সার্ভার ক্লাউড স্পেস ও হেভি ফাইল সিঙ্ক
+                </p>
+              </div>
+            </div>
+
+            {/* Explanatory Notice */}
+            <div className="p-3.5 bg-slate-950/60 rounded-2xl border border-slate-800 text-xs text-slate-300 space-y-2 leading-relaxed">
+              <div className="flex items-start gap-2">
+                <HardDrive className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+                <p>
+                  <strong>ডিফল্ট ফ্রি চ্যাট ও ড্রাইভ:</strong> আপনার সমস্ত টেক্সট, অডিও ও ছবি লোকাল মেমোরি এবং নিজস্ব গুগল ড্রাইভে জমা থাকে (ফায়ারবেস স্টোরেজ খরচ হয় না)।
+                </p>
+              </div>
+              <div className="flex items-start gap-2">
+                <Radio className="w-4 h-4 text-lime-400 shrink-0 mt-0.5" />
+                <p>
+                  <strong>ভয়েস ও ভিডিও কলিং:</strong> রিয়েল-টাইম WebRTC পিয়ার-টু-পিয়ার সিগন্যালিং দ্বারা সবসময় সক্রিয় এবং সম্পূর্ণ ফ্রি।
+                </p>
+              </div>
+              <div className="flex items-start gap-2">
+                <Cloud className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <p>
+                  ফায়ারবেস ক্লাউডে বিশাল প্রজেক্ট ফাইল হোস্ট করতে চাইলে ওনার অ্যাডমিনের থেকে অতিরিক্ত স্টোরেজ পারমিশন নিতে পারেন।
+                </p>
+              </div>
+            </div>
+
+            {/* Current Request Status */}
+            {currentUser && (
+              <div className="p-3 bg-slate-800/60 rounded-xl border border-slate-700/60 flex items-center justify-between text-xs">
+                <span className="text-slate-400">ক্লাউড স্টোরেজ স্ট্যাটাস:</span>
+                {currentUser.firebaseAccessGranted ? (
+                  <span className="font-bold text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-500/30">
+                    ✅ ক্লাউড অ্যাক্টিভ
+                  </span>
+                ) : currentUser.firebaseRequestStatus === 'pending' ? (
+                  <span className="font-bold text-amber-400 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-500/30">
+                    ⏳ আবেদন পর্যালোচনায় রয়েছে
+                  </span>
+                ) : currentUser.firebaseRequestStatus === 'rejected' ? (
+                  <span className="font-bold text-rose-400 bg-rose-950/80 px-2 py-0.5 rounded border border-rose-500/30">
+                    ❌ পূর্ববর্তী আবেদন বাতিল
+                  </span>
+                ) : (
+                  <span className="font-bold text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-700">
+                    🔒 লোকাল মোড (ডিফল্ট)
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Success Message Banner */}
+            {accessSuccessMessage && (
+              <div className="p-3 bg-emerald-500/15 border border-emerald-500/30 rounded-xl text-emerald-300 text-xs font-semibold">
+                {accessSuccessMessage}
+              </div>
+            )}
+
+            {/* Form to submit request if not yet approved */}
+            {!currentUser?.firebaseAccessGranted && (
+              <form onSubmit={handleSubmitAccessFromChat} className="space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    আবেদনের কারণ (ঐচ্ছিক):
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={accessReason}
+                    onChange={(e) => setAccessReason(e.target.value)}
+                    placeholder="যেমন: বড় ফাইল সরাসরি ক্লাউড স্টোরেজে সেভ করতে চাই..."
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500 transition resize-none"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="submit"
+                    disabled={isSubmittingAccess || currentUser?.firebaseRequestStatus === 'pending'}
+                    className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg cursor-pointer ${
+                      currentUser?.firebaseRequestStatus === 'pending'
+                        ? 'bg-slate-800 text-slate-400 cursor-not-allowed border border-slate-700'
+                        : 'bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 shadow-amber-500/20'
+                    }`}
+                  >
+                    <Key className="w-3.5 h-3.5" />
+                    <span>
+                      {isSubmittingAccess
+                        ? 'পাঠানো হচ্ছে...'
+                        : currentUser?.firebaseRequestStatus === 'pending'
+                        ? 'আবেদন পাঠানো হয়েছে'
+                        : 'ক্লাউড স্টোরেজ পারমিশন আবেদন'}
+                    </span>
+                  </button>
+
+                  {onOpenProfile && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsAccessModalOpen(false);
+                        onOpenProfile();
+                      }}
+                      className="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold border border-slate-700 flex items-center gap-1.5 transition cursor-pointer"
+                      title="ড্রাইভ ও প্রোফাইল সেটিংসে যান"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>প্রোফাইল</span>
+                    </button>
+                  )}
+                </div>
+              </form>
+            )}
+
+            {currentUser?.firebaseAccessGranted && (
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAccessModalOpen(false)}
+                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg transition cursor-pointer"
+                >
+                  ঠিক আছে, সম্পন্ন
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Voice Call Room Modal Overlay */}
       {isCallModalOpen && (
         <div className="absolute inset-0 z-40 bg-slate-950/95 backdrop-blur-lg flex flex-col justify-between p-6 animate-fadeIn">
@@ -582,15 +797,18 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
 
         {/* Right Actions: Voice Call & Session Management */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={() => setIsLocationModalOpen(true)}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-lime-500/20 hover:bg-lime-500/30 text-lime-300 border border-lime-500/40 text-xs font-bold transition active:scale-95 cursor-pointer shadow-sm shadow-lime-500/10"
-            title="লাইভ লোকেশন ট্র্যাক করুন"
-          >
-            <MapPin className="w-3.5 h-3.5 text-lime-400" />
-            <span className="hidden sm:inline">লোকেশন</span>
-          </button>
+          {/* Location button ONLY for Sellers/Admins/Owners, completely hidden from buyers */}
+          {isSellerOrAdmin && (
+            <button
+              type="button"
+              onClick={() => setIsLocationModalOpen(true)}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-lime-500/20 hover:bg-lime-500/30 text-lime-300 border border-lime-500/40 text-xs font-bold transition active:scale-95 cursor-pointer shadow-sm shadow-lime-500/10"
+              title="লাইভ লোকেশন ট্র্যাক করুন"
+            >
+              <MapPin className="w-3.5 h-3.5 text-lime-400" />
+              <span className="hidden sm:inline">লোকেশন</span>
+            </button>
+          )}
 
           <button
             type="button"
@@ -604,10 +822,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
 
           <button
             type="button"
-            onClick={() => {
-              sounds.playClick();
-              setIsMeteredVideoOpen(true);
-            }}
+            onClick={handleOpenVideoCall}
             className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-xs font-bold transition active:scale-95 cursor-pointer shadow-sm shadow-cyan-500/10"
             title="Metered HD ভিডিও মিটিং চালু করুন"
           >
@@ -638,15 +853,43 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
         </div>
       </div>
 
-      {/* Security & Real-Time Encryption Bar */}
-      <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-teal-950 border-b border-emerald-500/20 px-3.5 py-2 flex items-center justify-between text-xs text-white">
-        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-300 truncate">
-          <Radio className="w-3 h-3 text-lime-400 animate-pulse shrink-0" />
-          <span className="truncate">রিয়েল-টাইম লাইভ এনক্রিপ্টেড চ্যাট ও অডিও চ্যানেল সক্রিয়</span>
+      {/* Security & Storage Status Bar */}
+      <div className="bg-slate-900/95 border-b border-slate-800 px-3.5 py-2 flex items-center justify-between text-xs text-white">
+        <div className="flex items-center gap-2 text-[11px] font-semibold truncate">
+          <span className="flex items-center gap-1 text-lime-400 font-mono">
+            <Radio className="w-3 h-3 animate-pulse text-lime-400 shrink-0" />
+            <span>কলিং ফ্রি</span>
+          </span>
+          <span className="text-slate-600">•</span>
+          {hasFirebaseAccess ? (
+            <span className="text-emerald-300 truncate">
+              🔥 ক্লাউড স্টোরেজ অনুমোদিত
+            </span>
+          ) : (
+            <span className="text-slate-300 truncate">
+              স্টোরেজ: <span className="text-cyan-300">লোকাল ও গুগল ড্রাইভ</span>
+            </span>
+          )}
         </div>
-        <span className="text-[10px] text-lime-400 bg-lime-950/90 px-2 py-0.5 rounded border border-lime-500/30 font-mono font-bold shrink-0">
-          ১০০% সুরক্ষিত
-        </span>
+
+        {hasFirebaseAccess ? (
+          <span className="text-[10px] text-emerald-400 bg-emerald-950/90 px-2 py-0.5 rounded border border-emerald-500/30 font-mono font-bold shrink-0">
+            ক্লাউড সিঙ্ক
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              sounds.playClick();
+              setIsAccessModalOpen(true);
+            }}
+            className="text-[10px] text-amber-300 bg-amber-950/70 hover:bg-amber-900/80 px-2 py-0.5 rounded border border-amber-500/40 font-semibold flex items-center gap-1 transition cursor-pointer shrink-0"
+            title="ফায়ারবেস ক্লাউড স্টোরেজ সংক্রান্ত তথ্য"
+          >
+            <Cloud className="w-2.5 h-2.5 text-amber-400" />
+            <span>ক্লাউড স্টোরেজ</span>
+          </button>
+        )}
       </div>
 
       {/* Messages Stream Area */}
@@ -919,13 +1162,15 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
           </button>
         </form>
       )}
-      {/* Live Location Tracking Modal */}
-      <LiveLocationModal
-        isOpen={isLocationModalOpen}
-        onClose={() => setIsLocationModalOpen(false)}
-        targetUserName={activeSeller.name}
-        targetUserRole="হোস্ট"
-      />
+      {/* Live Location Tracking Modal - Accessible ONLY to Seller/Admin */}
+      {isSellerOrAdmin && (
+        <LiveLocationModal
+          isOpen={isLocationModalOpen}
+          onClose={() => setIsLocationModalOpen(false)}
+          targetUserName={activeSeller.name}
+          targetUserRole="হোস্ট"
+        />
+      )}
 
       {/* Metered HD Video Meeting Modal */}
       <MeteredVideoModal
